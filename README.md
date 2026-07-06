@@ -1,4 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Start Academy — Plateforme interne
+
+Diagnostic guidé, moteur financement, cockpit et proposition commerciale pour l'équipe Start Academy.
+
+## Workflow Git
+
+Toute modification passe par **branche → PR → CI verte → merge**. Aucun push direct sur `main`.
+
+Après un clone, exécuter **une seule fois** :
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Cette commande active le hook local `.githooks/pre-push` qui refuse le push direct sur `main`. Bypass volontaire (à documenter) : `git push --no-verify`.
+
+**Protection serveur** : la protection de branche GitHub (rulesets, required status checks) est **indisponible sur le plan Free pour un repo privé**. Elle sera activée avec **GitHub Pro** — payload prêt :
+
+- `required_status_checks: strict` avec contexte `typecheck + test + build`
+- `required_linear_history: true`
+- `allow_force_pushes: false`, `allow_deletions: false`
+- `required_pull_request_reviews.required_approving_review_count: 0` (dev solo)
+- `enforce_admins: false` (issue de secours assumée)
+
+En attendant, la discipline PR + le hook local + la CI (verrou logique) tiennent lieu de garde-fous.
 
 ## Getting Started
 

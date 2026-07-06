@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#
+# Hook pre-push versionné (activation : `git config core.hooksPath .githooks`
+# à exécuter une seule fois après chaque clone — cf. README).
+#
+# Refuse tout push dont la référence distante est `refs/heads/main`.
+# La protection serveur (GitHub rulesets / branch protection) est
+# indisponible sur le plan Free pour un repo privé — ce hook + la
+# discipline PR + la CI tiennent lieu de garde-fous en attendant
+# l'activation de GitHub Pro.
+#
+# Bypass volontaire (à documenter dans le message de commit) :
+#   git push --no-verify
+
+set -euo pipefail
+
+protected_ref="refs/heads/main"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "$protected_ref" ]; then
+    echo ""
+    echo "Push direct sur main interdit — passe par une branche + PR."
+    echo "Bypass volontaire : --no-verify"
+    echo ""
+    exit 1
+  fi
+done
+
+exit 0

@@ -491,6 +491,10 @@ absorbées dans un lot de nettoyage lint transverse (post-pilote).
   d'endpoint d'ingestion.
 - **Document uniquement** : aucune fonctionnalité applicative
   ajoutée dans ce sprint.
+- **Protection branche serveur non active (Free tier)** — hook
+  client `.githooks/pre-push` + discipline PR en vigueur, payload
+  de protection prêt pour activation Pro (cf. README, section
+  Workflow Git).
 
 ---
 

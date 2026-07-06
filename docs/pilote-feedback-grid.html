@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Grille de feedback pilote — Start Academy Diagnostic</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #0b1b2a;
+    margin: 0;
+    padding: 0;
+    line-height: 1.4;
+    font-size: 11pt;
+  }
+  header {
+    border-bottom: 2px solid #00527a;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  header .brand {
+    color: #00527a;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 10pt;
+  }
+  header h1 {
+    margin: 0;
+    color: #00527a;
+    font-size: 14pt;
+  }
+  .meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+    margin-bottom: 14px;
+    font-size: 10pt;
+  }
+  .meta label { display: block; font-weight: 600; color: #00527a; }
+  .meta .field {
+    border-bottom: 1px solid #b5c6d3;
+    min-height: 18px;
+    margin-top: 2px;
+  }
+  h2 {
+    color: #00527a;
+    font-size: 12pt;
+    margin: 14px 0 8px;
+    border-bottom: 1px solid #3ea9ff;
+    padding-bottom: 3px;
+  }
+  table.criteria {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+  }
+  table.criteria th,
+  table.criteria td {
+    padding: 5px 6px;
+    border: 1px solid #b5c6d3;
+    vertical-align: top;
+    font-size: 10pt;
+  }
+  table.criteria th {
+    background: #eaf5ff;
+    color: #00527a;
+    text-align: left;
+    font-weight: 600;
+  }
+  table.criteria td.num {
+    text-align: center;
+    width: 32px;
+    background: #f6f9fc;
+    font-weight: 600;
+  }
+  table.criteria td.scale {
+    width: 86px;
+    text-align: center;
+    letter-spacing: 2px;
+    font-size: 13pt;
+    line-height: 1;
+  }
+  table.criteria td.comment {
+    width: 50%;
+  }
+  .open-q {
+    margin-bottom: 10px;
+  }
+  .open-q .label {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #00527a;
+  }
+  .open-q .lines {
+    border: 1px solid #b5c6d3;
+    border-radius: 4px;
+    min-height: 50px;
+    background: linear-gradient(transparent, transparent 19px, #e5edf3 19px, #e5edf3 20px);
+    background-size: 100% 20px;
+  }
+  .posture {
+    border: 1px solid #b5c6d3;
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: #f6f9fc;
+    margin-bottom: 10px;
+  }
+  .posture label { display: block; margin: 3px 0; font-size: 10pt; }
+  .posture label input { margin-right: 6px; }
+  .summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: 12px;
+    font-size: 10pt;
+  }
+  .summary .cell {
+    border: 1px solid #b5c6d3;
+    border-radius: 4px;
+    padding: 6px 8px;
+    background: #f6f9fc;
+  }
+  .summary .cell .lbl {
+    color: #00527a;
+    font-weight: 600;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .summary .cell .val {
+    border-bottom: 1px solid #b5c6d3;
+    min-height: 18px;
+    margin-top: 4px;
+  }
+  footer {
+    margin-top: 16px;
+    font-size: 8pt;
+    color: #5e7a91;
+    text-align: center;
+  }
+  @media print {
+    body { font-size: 10pt; }
+    h2 { page-break-after: avoid; }
+    .open-q .lines { min-height: 42px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand">Start Academy</div>
+    <h1>Grille de feedback pilote</h1>
+  </div>
+  <div style="color:#5e7a91; font-size:9pt;">Diagnostic & Parcours · v MVP pilote</div>
+</header>
+
+<div class="meta">
+  <div><label>Client</label><div class="field"></div></div>
+  <div><label>Date du pilote</label><div class="field"></div></div>
+  <div><label>Évalué par</label><div class="field"></div></div>
+  <div><label>Fonction</label><div class="field"></div></div>
+</div>
+
+<h2>Évaluation détaillée — note de 1 (très insatisfait) à 5 (excellent)</h2>
+
+<table class="criteria">
+  <thead>
+    <tr>
+      <th style="width:24px;">#</th>
+      <th>Critère</th>
+      <th style="width:96px;">Note (1-5)</th>
+      <th>Commentaire libre</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td class="num">1</td><td>Clarté du diagnostic réalisé en RDV</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">2</td><td>Pertinence des modules recommandés</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">3</td><td>Lisibilité de la proposition reçue</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">4</td><td>Crédibilité du prix et du financement potentiel</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">5</td><td>Simplicité du guide dirigeant (espace public)</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">6</td><td>Facilité de la collecte collaborateurs</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">7</td><td>Qualité du support formateur</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">8</td><td>Qualité visuelle du PDF designé</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">9</td><td>Valeur perçue globale</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+    <tr><td class="num">10</td><td>Probabilité de continuer / acheter à l'issue</td><td class="scale">☐☐☐☐☐</td><td class="comment"></td></tr>
+  </tbody>
+</table>
+
+<h2>Questions ouvertes</h2>
+
+<div class="open-q"><div class="label">1. Un truc qui vous a manqué pendant le pilote ?</div><div class="lines"></div></div>
+<div class="open-q"><div class="label">2. Un truc qui vous a surpris en bien ?</div><div class="lines"></div></div>
+<div class="open-q"><div class="label">3. Un truc à changer en priorité ?</div><div class="lines"></div></div>
+<div class="open-q"><div class="label">4. Quelle est la valeur la plus claire que vous y voyez ?</div><div class="lines"></div></div>
+<div class="open-q"><div class="label">5. Quelle est la limite la plus claire que vous y voyez ?</div><div class="lines"></div></div>
+
+<h2>Posture client</h2>
+<div class="posture">
+  <label><input type="checkbox"> Prêt à continuer avec une session formation réelle</label>
+  <label><input type="checkbox"> Veut tester encore (autre client / autre cas) avant décision</label>
+  <label><input type="checkbox"> Pas pour lui — feedback purement descendant</label>
+  <label><input type="checkbox"> À recontacter dans X mois : ________________</label>
+</div>
+
+<h2>Synthèse</h2>
+<div class="summary">
+  <div class="cell"><div class="lbl">Note moyenne</div><div class="val"></div></div>
+  <div class="cell"><div class="lbl">Recommanderait</div><div class="val">☐ Oui  ☐ Non  ☐ Réserves</div></div>
+  <div class="cell"><div class="lbl">Décision J+5 ouvrés</div><div class="val"></div></div>
+</div>
+
+<footer>
+  Start Academy Diagnostic — phase pilote · merci pour votre retour
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,830 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+/**
+ * Édition des participants prévisionnels d'un diagnostic.
+ *
+ * Charge via `GET /api/diagnostics/[id]/participants` et sauvegarde
+ * via `PUT`. Auth interne requise — la route renvoie 401 sinon, ce
+ * que le composant affiche proprement.
+ *
+ * Aucune donnée individuelle n'est diffusée publiquement : ce
+ * composant est rendu uniquement dans les pages internes
+ * (recommandation, proposition).
+ */
+
+type ProfStatus =
+  | ""
+  | "salarie"
+  | "agent_commercial_independant"
+  | "autre";
+
+interface ParticipantDraft {
+  id: string | null;
+  firstName: string;
+  professionalStatus: ProfStatus;
+  previousYearProduction: string;
+  notes: string;
+  // v1.0 — champs communs
+  lastName: string;
+  entryDate: string;
+  formations24mCount: string;
+  formations24mHours: string;
+  formations24mAmount: string;
+  // v1.0 — indé
+  expertLevel: "" | "debutant" | "confirme" | "expert";
+  caAnneeEnCours: string;
+  wantsEvolution: "" | "oui" | "non";
+  wantsTraining: "" | "oui" | "non";
+  priorityNeed: string;
+  // v1.0 — salarié
+  jobTitle: string;
+  contractType: "" | "temps_plein" | "temps_partiel";
+  conventionCollective: string;
+  eligibleOpco: "" | "oui" | "non";
+}
+
+interface ApiParticipant {
+  id: string;
+  firstName: string | null;
+  professionalStatus:
+    | "salarie"
+    | "agent_commercial_independant"
+    | "autre"
+    | null;
+  previousYearProduction: number | null;
+  notes: string | null;
+  lastName?: string | null;
+  entryDate?: string | null;
+  formations24mCount?: number | null;
+  formations24mHours?: number | null;
+  formations24mAmount?: number | null;
+  expertLevel?: "debutant" | "confirme" | "expert" | null;
+  caAnneeEnCours?: number | null;
+  wantsEvolution?: boolean | null;
+  wantsTraining?: boolean | null;
+  priorityNeed?: string | null;
+  jobTitle?: string | null;
+  contractType?: "temps_plein" | "temps_partiel" | null;
+  conventionCollective?: string | null;
+  eligibleOpco?: boolean | null;
+}
+
+const DEFAULT_CONVENTION = "Immobilier — IDCC 1527";
+const boolToRadio = (v: boolean | null | undefined): "" | "oui" | "non" =>
+  v === true ? "oui" : v === false ? "non" : "";
+const radioToBool = (v: "" | "oui" | "non"): boolean | null =>
+  v === "oui" ? true : v === "non" ? false : null;
+
+const STATUS_OPTIONS: Array<{ value: ProfStatus; label: string }> = [
+  { value: "", label: "Sélectionner…" },
+  { value: "salarie", label: "Salarié" },
+  {
+    value: "agent_commercial_independant",
+    label: "Agent commercial indépendant",
+  },
+  { value: "autre", label: "Autre" },
+];
+
+function emptyDraft(): ParticipantDraft {
+  return {
+    id: null,
+    firstName: "",
+    professionalStatus: "",
+    previousYearProduction: "",
+    notes: "",
+    lastName: "",
+    entryDate: "",
+    formations24mCount: "",
+    formations24mHours: "",
+    formations24mAmount: "",
+    expertLevel: "",
+    caAnneeEnCours: "",
+    wantsEvolution: "",
+    wantsTraining: "",
+    priorityNeed: "",
+    jobTitle: "",
+    contractType: "",
+    conventionCollective: "",
+    eligibleOpco: "",
+  };
+}
+
+function apiToDraft(p: ApiParticipant): ParticipantDraft {
+  return {
+    id: p.id,
+    firstName: p.firstName ?? "",
+    professionalStatus: (p.professionalStatus ?? "") as ProfStatus,
+    previousYearProduction:
+      p.previousYearProduction !== null ? String(p.previousYearProduction) : "",
+    notes: p.notes ?? "",
+    lastName: p.lastName ?? "",
+    entryDate: p.entryDate ?? "",
+    formations24mCount:
+      p.formations24mCount !== null && p.formations24mCount !== undefined
+        ? String(p.formations24mCount)
+        : "",
+    formations24mHours:
+      p.formations24mHours !== null && p.formations24mHours !== undefined
+        ? String(p.formations24mHours)
+        : "",
+    formations24mAmount:
+      p.formations24mAmount !== null && p.formations24mAmount !== undefined
+        ? String(p.formations24mAmount)
+        : "",
+    expertLevel: (p.expertLevel ?? "") as ParticipantDraft["expertLevel"],
+    caAnneeEnCours:
+      p.caAnneeEnCours !== null && p.caAnneeEnCours !== undefined
+        ? String(p.caAnneeEnCours)
+        : "",
+    wantsEvolution: boolToRadio(p.wantsEvolution),
+    wantsTraining: boolToRadio(p.wantsTraining),
+    priorityNeed: p.priorityNeed ?? "",
+    jobTitle: p.jobTitle ?? "",
+    contractType: (p.contractType ?? "") as ParticipantDraft["contractType"],
+    conventionCollective: p.conventionCollective ?? "",
+    eligibleOpco: boolToRadio(p.eligibleOpco),
+  };
+}
+
+interface Props {
+  diagnosticId: string;
+  /** Affichage compact ou complet. */
+  compact?: boolean;
+}
+
+type SaveState =
+  | { kind: "idle" }
+  | { kind: "saving" }
+  | { kind: "success" }
+  | { kind: "error"; message: string };
+
+export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
+  const [participants, setParticipants] = useState<ParticipantDraft[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(
+        `/api/diagnostics/${encodeURIComponent(diagnosticId)}/participants`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setLoadError(json.error ?? `Chargement impossible (HTTP ${res.status}).`);
+        setParticipants([]);
+        return;
+      }
+      const json = (await res.json()) as { participants: ApiParticipant[] };
+      setParticipants((json.participants ?? []).map(apiToDraft));
+    } catch {
+      setLoadError("Erreur réseau au chargement des participants.");
+    } finally {
+      setLoading(false);
+    }
+  }, [diagnosticId]);
+
+  useEffect(() => {
+    // Fetch on-mount des participants. Le setState synchrone (setLoading
+    // true) est intentionnel : l'UI doit basculer immédiatement en
+    // « chargement » à l'apparition du composant, avant l'attente réseau.
+    // Le rule react-hooks/set-state-in-effect ne prévoit pas d'escape
+    // hatch idiomatique pour ce pattern data-fetching-on-mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, [load]);
+
+  function updateRow(idx: number, patch: Partial<ParticipantDraft>) {
+    setParticipants((prev) =>
+      prev.map((p, i) => {
+        if (i !== idx) return p;
+        const next = { ...p, ...patch };
+        // v1.0 — auto-pré-remplit la convention collective par défaut la
+        // 1re fois que le statut bascule sur « salarié », sans écraser
+        // une saisie manuelle existante.
+        if (
+          patch.professionalStatus === "salarie" &&
+          !next.conventionCollective.trim()
+        ) {
+          next.conventionCollective = DEFAULT_CONVENTION;
+        }
+        return next;
+      })
+    );
+    if (saveState.kind === "success") setSaveState({ kind: "idle" });
+  }
+
+  function addRow() {
+    setParticipants((prev) => [...prev, emptyDraft()]);
+    if (saveState.kind === "success") setSaveState({ kind: "idle" });
+  }
+
+  function removeRow(idx: number) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Retirer ce participant de la liste prévisionnelle ?")
+    ) {
+      return;
+    }
+    setParticipants((prev) => prev.filter((_, i) => i !== idx));
+    if (saveState.kind === "success") setSaveState({ kind: "idle" });
+  }
+
+  async function save() {
+    setSaveState({ kind: "saving" });
+    try {
+      const numOrNull = (raw: string): number | null => {
+        const trimmed = raw.trim();
+        if (trimmed === "") return null;
+        const n = Number(trimmed);
+        return Number.isFinite(n) ? n : null;
+      };
+      const payload = {
+        participants: participants.map((p) => ({
+          firstName: p.firstName.trim() || null,
+          professionalStatus: p.professionalStatus || null,
+          previousYearProduction: numOrNull(p.previousYearProduction),
+          notes: p.notes.trim() || null,
+          lastName: p.lastName.trim() || null,
+          entryDate: p.entryDate.trim() || null,
+          formations24mCount: numOrNull(p.formations24mCount),
+          formations24mHours: numOrNull(p.formations24mHours),
+          formations24mAmount: numOrNull(p.formations24mAmount),
+          expertLevel: p.expertLevel || null,
+          caAnneeEnCours: numOrNull(p.caAnneeEnCours),
+          wantsEvolution: radioToBool(p.wantsEvolution),
+          wantsTraining: radioToBool(p.wantsTraining),
+          priorityNeed: p.priorityNeed.trim() || null,
+          jobTitle: p.jobTitle.trim() || null,
+          contractType: p.contractType || null,
+          conventionCollective: p.conventionCollective.trim() || null,
+          eligibleOpco: radioToBool(p.eligibleOpco),
+        })),
+        costPerParticipant: null,
+      };
+      const res = await fetch(
+        `/api/diagnostics/${encodeURIComponent(diagnosticId)}/participants`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setSaveState({
+          kind: "error",
+          message:
+            detail.error ?? `Sauvegarde refusée (HTTP ${res.status}).`,
+        });
+        return;
+      }
+      setSaveState({ kind: "success" });
+    } catch {
+      setSaveState({
+        kind: "error",
+        message: "Erreur réseau. Réessayez.",
+      });
+    }
+  }
+
+  return (
+    <Card className="border-border/60 bg-white">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="font-heading text-xl text-[#00527a]">
+              Participants & financement potentiel
+            </CardTitle>
+            <CardDescription>
+              {compact
+                ? "Édition rapide — les modifications seront prises en compte à la prochaine génération de proposition."
+                : "Modifier les participants prévisionnels saisis lors du diagnostic. Les estimations de prise en charge seront recalculées au prochain lancement de la proposition."}
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            className="h-8 px-3 text-xs"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+            />
+            Actualiser
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loadError ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {loadError}
+          </p>
+        ) : null}
+
+        {loading && participants.length === 0 ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Chargement…
+          </p>
+        ) : null}
+
+        {!loading && participants.length === 0 ? (
+          <p className="rounded-md border border-dashed border-border/60 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+            Aucun participant prévisionnel saisi. Ajoutez-en pour
+            permettre l&apos;estimation de la prise en charge.
+          </p>
+        ) : null}
+
+        {participants.length > 0 ? (
+          <ul className="space-y-3">
+            {participants.map((p, idx) => (
+              <li
+                key={`participant-${idx}`}
+                className="rounded-md border border-border/60 bg-muted/10 p-3"
+              >
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`edit-firstName-${idx}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Prénom
+                    </Label>
+                    <Input
+                      id={`edit-firstName-${idx}`}
+                      value={p.firstName}
+                      onChange={(e) =>
+                        updateRow(idx, { firstName: e.target.value })
+                      }
+                      placeholder={`Participant ${idx + 1}`}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`edit-status-${idx}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Statut professionnel
+                    </Label>
+                    <select
+                      id={`edit-status-${idx}`}
+                      value={p.professionalStatus}
+                      onChange={(e) =>
+                        updateRow(idx, {
+                          professionalStatus: e.target.value as ProfStatus,
+                        })
+                      }
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      {STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`edit-production-${idx}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Production N-1 (€)
+                    </Label>
+                    <Input
+                      id={`edit-production-${idx}`}
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={p.previousYearProduction}
+                      onChange={(e) =>
+                        updateRow(idx, {
+                          previousYearProduction: e.target.value,
+                        })
+                      }
+                      placeholder="Ex : 12000"
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`edit-notes-${idx}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Commentaire
+                    </Label>
+                    <Input
+                      id={`edit-notes-${idx}`}
+                      value={p.notes}
+                      onChange={(e) =>
+                        updateRow(idx, { notes: e.target.value })
+                      }
+                      placeholder="Optionnel"
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+
+                {/*
+                  v1.0 — champs étendus. Tout est optionnel : saisie
+                  partielle autorisée, aucun blocage. Les fiches
+                  indé/salarié se déplient selon `professionalStatus`.
+                */}
+                <div className="mt-3 space-y-3 border-t border-dashed border-border/60 pt-3">
+                  <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Informations complémentaires (facultatif)
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`edit-lastName-${idx}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Nom
+                      </Label>
+                      <Input
+                        id={`edit-lastName-${idx}`}
+                        value={p.lastName}
+                        onChange={(e) =>
+                          updateRow(idx, { lastName: e.target.value })
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`edit-entryDate-${idx}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Date d&apos;entrée
+                      </Label>
+                      <Input
+                        id={`edit-entryDate-${idx}`}
+                        type="date"
+                        value={p.entryDate}
+                        onChange={(e) =>
+                          updateRow(idx, { entryDate: e.target.value })
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`edit-f24count-${idx}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Formations 24 mois — nombre
+                      </Label>
+                      <Input
+                        id={`edit-f24count-${idx}`}
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        value={p.formations24mCount}
+                        onChange={(e) =>
+                          updateRow(idx, { formations24mCount: e.target.value })
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`edit-f24hours-${idx}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Formations 24 mois — heures cumulées
+                      </Label>
+                      <Input
+                        id={`edit-f24hours-${idx}`}
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        value={p.formations24mHours}
+                        onChange={(e) =>
+                          updateRow(idx, { formations24mHours: e.target.value })
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`edit-f24amount-${idx}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Formations 24 mois — montant consommé (€)
+                      </Label>
+                      <Input
+                        id={`edit-f24amount-${idx}`}
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        value={p.formations24mAmount}
+                        onChange={(e) =>
+                          updateRow(idx, {
+                            formations24mAmount: e.target.value,
+                          })
+                        }
+                        className="h-9"
+                      />
+                    </div>
+                  </div>
+
+                  {p.professionalStatus === "agent_commercial_independant" && (
+                    <div className="rounded-md border border-border/60 bg-[#eaf5ff]/30 p-3">
+                      <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-[#00527a]">
+                        Fiche indépendant
+                      </p>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`edit-expertLevel-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Niveau d&apos;expertise
+                          </Label>
+                          <select
+                            id={`edit-expertLevel-${idx}`}
+                            value={p.expertLevel}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                expertLevel: e.target
+                                  .value as ParticipantDraft["expertLevel"],
+                              })
+                            }
+                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                          >
+                            <option value="">—</option>
+                            <option value="debutant">Débutant</option>
+                            <option value="confirme">Confirmé</option>
+                            <option value="expert">Expert</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`edit-caEnCours-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            CA année en cours (€)
+                          </Label>
+                          <Input
+                            id={`edit-caEnCours-${idx}`}
+                            type="number"
+                            min={0}
+                            inputMode="numeric"
+                            value={p.caAnneeEnCours}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                caAnneeEnCours: e.target.value,
+                              })
+                            }
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`edit-wantsEvo-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Souhait d&apos;évolution
+                          </Label>
+                          <select
+                            id={`edit-wantsEvo-${idx}`}
+                            value={p.wantsEvolution}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                wantsEvolution: e.target
+                                  .value as ParticipantDraft["wantsEvolution"],
+                              })
+                            }
+                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                          >
+                            <option value="">—</option>
+                            <option value="oui">Oui</option>
+                            <option value="non">Non</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`edit-wantsTrain-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Souhait de formation
+                          </Label>
+                          <select
+                            id={`edit-wantsTrain-${idx}`}
+                            value={p.wantsTraining}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                wantsTraining: e.target
+                                  .value as ParticipantDraft["wantsTraining"],
+                              })
+                            }
+                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                          >
+                            <option value="">—</option>
+                            <option value="oui">Oui</option>
+                            <option value="non">Non</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                          <Label
+                            htmlFor={`edit-priority-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Besoin prioritaire (texte libre)
+                          </Label>
+                          <Input
+                            id={`edit-priority-${idx}`}
+                            value={p.priorityNeed}
+                            onChange={(e) =>
+                              updateRow(idx, { priorityNeed: e.target.value })
+                            }
+                            placeholder="Ex : structurer la prospection…"
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {p.professionalStatus === "salarie" && (
+                    <div className="rounded-md border border-border/60 bg-[#eaf5ff]/30 p-3">
+                      <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-[#00527a]">
+                        Fiche salarié
+                      </p>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`edit-jobTitle-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Intitulé de poste
+                          </Label>
+                          <Input
+                            id={`edit-jobTitle-${idx}`}
+                            value={p.jobTitle}
+                            onChange={(e) =>
+                              updateRow(idx, { jobTitle: e.target.value })
+                            }
+                            className="h-9"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`edit-contract-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Contrat
+                          </Label>
+                          <select
+                            id={`edit-contract-${idx}`}
+                            value={p.contractType}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                contractType: e.target
+                                  .value as ParticipantDraft["contractType"],
+                              })
+                            }
+                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                          >
+                            <option value="">—</option>
+                            <option value="temps_plein">Temps plein</option>
+                            <option value="temps_partiel">Temps partiel</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`edit-opco-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Éligible OPCO
+                          </Label>
+                          <select
+                            id={`edit-opco-${idx}`}
+                            value={p.eligibleOpco}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                eligibleOpco: e.target
+                                  .value as ParticipantDraft["eligibleOpco"],
+                              })
+                            }
+                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                          >
+                            <option value="">—</option>
+                            <option value="oui">Oui</option>
+                            <option value="non">Non</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1 md:col-span-3">
+                          <Label
+                            htmlFor={`edit-convention-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Convention collective
+                          </Label>
+                          <Input
+                            id={`edit-convention-${idx}`}
+                            value={p.conventionCollective}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                conventionCollective: e.target.value,
+                              })
+                            }
+                            placeholder={DEFAULT_CONVENTION}
+                            className="h-9"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeRow(idx)}
+                    className="h-8 px-3 text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Retirer
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addRow}
+            className="h-9 px-3 text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Ajouter un participant
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void save()}
+            disabled={saveState.kind === "saving"}
+            className="h-9 px-3 bg-[#00527a] text-white hover:bg-[#00527a]/90"
+          >
+            {saveState.kind === "saving" ? "Enregistrement…" : "Enregistrer"}
+          </Button>
+        </div>
+
+        {saveState.kind === "success" ? (
+          <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            <p className="font-medium">
+              Participants prévisionnels enregistrés.
+            </p>
+            <p className="mt-1">
+              Les modifications seront prises en compte à la prochaine
+              génération de proposition.
+            </p>
+          </div>
+        ) : null}
+        {saveState.kind === "error" ? (
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {saveState.message}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

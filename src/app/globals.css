@@ -1,26 +1,226 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-montserrat);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-rajdhani);
+
+  --color-brand-blue: #3ea9ff;
+  --color-brand-deep: #00527a;
+  --color-brand-white: #ffffff;
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --background: #ffffff;
+  --foreground: #0b1b2a;
+  --card: #ffffff;
+  --card-foreground: #0b1b2a;
+  --popover: #ffffff;
+  --popover-foreground: #0b1b2a;
+
+  --primary: #00527a;
+  --primary-foreground: #ffffff;
+
+  --secondary: #eaf5ff;
+  --secondary-foreground: #00527a;
+
+  --muted: #f4f7fa;
+  --muted-foreground: #5b6b7a;
+
+  --accent: #3ea9ff;
+  --accent-foreground: #ffffff;
+
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #3ea9ff;
+
+  --chart-1: #3ea9ff;
+  --chart-2: #00527a;
+  --chart-3: #7dc3ff;
+  --chart-4: #0b3d59;
+  --chart-5: #9bd0ff;
+
+  --radius: 0.75rem;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0b1b2a;
+  --sidebar-primary: #00527a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eaf5ff;
+  --sidebar-accent-foreground: #00527a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #3ea9ff;
+}
+
+.dark {
+  --background: #0b1b2a;
+  --foreground: #f4f7fa;
+  --card: #0f2436;
+  --card-foreground: #f4f7fa;
+  --popover: #0f2436;
+  --popover-foreground: #f4f7fa;
+
+  --primary: #3ea9ff;
+  --primary-foreground: #0b1b2a;
+
+  --secondary: #103246;
+  --secondary-foreground: #f4f7fa;
+
+  --muted: #103246;
+  --muted-foreground: #9fb3c8;
+
+  --accent: #3ea9ff;
+  --accent-foreground: #0b1b2a;
+
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: #1d3a52;
+  --input: #1d3a52;
+  --ring: #3ea9ff;
+
+  --chart-1: #3ea9ff;
+  --chart-2: #00527a;
+  --chart-3: #7dc3ff;
+  --chart-4: #0b3d59;
+  --chart-5: #9bd0ff;
+
+  --sidebar: #0f2436;
+  --sidebar-foreground: #f4f7fa;
+  --sidebar-primary: #3ea9ff;
+  --sidebar-primary-foreground: #0b1b2a;
+  --sidebar-accent: #103246;
+  --sidebar-accent-foreground: #f4f7fa;
+  --sidebar-border: #1d3a52;
+  --sidebar-ring: #3ea9ff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  html {
+    @apply font-sans;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: 0.01em;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ---------------------------------------------------------------------------
+ * Impression — support de formation (PDF MVP via window.print()).
+ * Couleurs Start Academy conservées (print-color-adjust: exact).
+ * Le shell sidebar/topbar est masqué via les classes Tailwind print:hidden
+ * sur les éléments concernés.
+ * ------------------------------------------------------------------------- */
+@page {
+  size: A4;
+  margin: 18mm 16mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0b1b2a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    font-size: 11pt;
+    line-height: 1.45;
+  }
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+  /* Toolbar / boutons d'action — masqués à l'impression.
+     Complète l'utilitaire Tailwind `print:hidden` pour les composants
+     qui n'ont pas pu être tagués individuellement. */
+  [data-print-hide],
+  [data-print-hide] * {
+    display: none !important;
+  }
+  /* Garantit que chaque module reste sur sa propre page quand possible. */
+  .print-page-break {
+    break-before: page;
+    page-break-before: always;
+  }
+  /* Évite les coupures au milieu des blocs structurants. */
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Force les fonds/teintes Start Academy à l'impression. */
+  .print-keep-color {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Anti-débordement strict sur les slides designées : tout dépassement
+     visuel reste clippé à l'intérieur du cadre 16:9 — empêche le
+     contenu de mordre sur la page suivante. */
+  article[data-slide-type] {
+    overflow: hidden !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+  /* Slide-wrapper du print-view : chaque slide remplit la page A4
+     paysage, aucun gap résiduel hérité du flow vertical de prévisu. */
+  .print-slide-wrapper {
+    page-break-after: always;
+    break-after: page;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .print-slide-wrapper:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
 }

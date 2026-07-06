@@ -269,8 +269,9 @@ export function selectRelevantModulesForAnalysis(
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  // 3. Top 20 max.
-  let selected = scored.slice(0, 20).map((s) => s.module);
+  // 3. Top 20 max. `const` : la référence est stable, seul le contenu
+  // du tableau évolue via `.push` en §4 (règle prefer-const respectée).
+  const selected = scored.slice(0, 20).map((s) => s.module);
 
   // 4. Si moins de 8 modules, compléter avec génériques du profil.
   //    On évite d'ajouter Gamma en complétion (hors scope).

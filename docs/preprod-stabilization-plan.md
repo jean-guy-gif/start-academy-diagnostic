@@ -443,34 +443,36 @@ Exemples de cas :
 
 ### 11.4 Dette lint tracée (issue de v1.0b, clôturée 2026-07-06)
 
-Après la livraison v1.0b, `npm run lint` retourne **8 erreurs
-résiduelles**, toutes dans des fichiers **non touchés** par les
-lots v1.0/v1.0b. Elles ne sont donc pas des régressions v1.0b.
+Après la livraison v1.0b, `npm run lint` retournait 8 erreurs
+résiduelles. Les 3 des **heuristiques de fallback IA** ont été
+corrigées dans la PR #2 (`fix/lint-heuristic-fallbacks`) car
+elles se déclenchent quand OpenRouter tombe / dépasse le budget —
+chemin critique du smoke §4. Reste 5 erreurs `set-state-in-effect`
+en dette suivie (sous-système `sessions/[id]/*`, non touché par
+v1.0/v1.0b, non bloquantes pour le smoke).
+
 Règle validée : **zéro nouvelle erreur lint dans les fichiers
-touchés par v1.0/v1.0b** — les 4 erreurs qui l'étaient ont été
-corrigées avant merge.
+touchés par v1.0/v1.0b**.
 
-| # | Fichier | Ligne | Règle | Bloquant smoke test ? |
+| # | Fichier | Ligne | Règle | Statut |
 |---|---|---|---|---|
-| 1 | `src/app/(app)/sessions/[id]/post-training-review.tsx` | 155 | `react-hooks/set-state-in-effect` | Non — data fetch on-mount classique |
-| 2 | `src/app/(app)/sessions/[id]/session-activity-journal.tsx` | 149 | `react-hooks/set-state-in-effect` | Non |
-| 3 | `src/app/(app)/sessions/[id]/session-date-options.tsx` | 108 | `react-hooks/set-state-in-effect` | Non |
-| 4 | `src/app/(app)/sessions/[id]/session-documents.tsx` | 69 | `react-hooks/set-state-in-effect` | Non |
-| 5 | `src/app/(app)/sessions/[id]/support/design/support-quality-validation.tsx` | 82 | `react-hooks/set-state-in-effect` | Non |
-| 6 | `src/lib/ai/heuristic-designed-support.ts` | 462 | `@next/next/no-assign-module-variable` | **⚠️ Oui — à corriger avant smoke test** |
-| 7 | `src/lib/ai/heuristic-training-support.ts` | 342 | `@next/next/no-assign-module-variable` | **⚠️ Oui — à corriger avant smoke test** |
-| 8 | `src/lib/ai/select-relevant-modules-for-analysis.ts` | 273 | `prefer-const` | **⚠️ Oui — à corriger avant smoke test** |
+| 1 | `src/app/(app)/sessions/[id]/post-training-review.tsx` | 155 | `react-hooks/set-state-in-effect` | Dette suivie — non bloquant |
+| 2 | `src/app/(app)/sessions/[id]/session-activity-journal.tsx` | 149 | `react-hooks/set-state-in-effect` | Dette suivie — non bloquant |
+| 3 | `src/app/(app)/sessions/[id]/session-date-options.tsx` | 108 | `react-hooks/set-state-in-effect` | Dette suivie — non bloquant |
+| 4 | `src/app/(app)/sessions/[id]/session-documents.tsx` | 69 | `react-hooks/set-state-in-effect` | Dette suivie — non bloquant |
+| 5 | `src/app/(app)/sessions/[id]/support/design/support-quality-validation.tsx` | 82 | `react-hooks/set-state-in-effect` | Dette suivie — non bloquant |
+| 6 | `src/lib/ai/heuristic-designed-support.ts` | 462 | `@next/next/no-assign-module-variable` | ✅ **Corrigée (PR #2)** — rename `module` → `catalogModule` |
+| 7 | `src/lib/ai/heuristic-training-support.ts` | 342 | `@next/next/no-assign-module-variable` | ✅ **Corrigée (PR #2)** — rename `module` → `catalogModule` |
+| 8 | `src/lib/ai/select-relevant-modules-for-analysis.ts` | 273 | `prefer-const` | ✅ **Corrigée (PR #2)** — `let` → `const` |
 
-**Motif du blocage smoke** : les 3 erreurs #6-8 concernent les
-**heuristiques de fallback IA** — le code qui s'exécute quand
-OpenRouter tombe ou dépasse budget. C'est précisément le chemin
-qu'on veut voir fonctionner en mode dégradé pendant le smoke §4.
-Une assignation à `module` (variable réservée Next.js) ou un
-`selected` non-`const` peut passer inaperçu au happy path et
-casser l'app quand la bascule heuristique se déclenche.
+**Motif du fix #6-8** : ces erreurs concernaient les heuristiques
+de fallback IA — le code qui s'exécute quand OpenRouter tombe ou
+dépasse budget. C'est précisément le chemin qu'on veut voir
+fonctionner en mode dégradé pendant le smoke §4. Une assignation
+à `module` (variable réservée Next.js) ou un `selected` non-`const`
+pouvait passer inaperçu au happy path et casser l'app à la bascule
+heuristique.
 
-**Action** : corriger #6-8 dans un hotfix ciblé (branche
-`chore/lint-heuristics-hotfix`) avant d'ouvrir le smoke test §4.
 Les 5 erreurs #1-5 restent dette suivie ; elles pourront être
 absorbées dans un lot de nettoyage lint transverse (post-pilote).
 

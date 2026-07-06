@@ -339,8 +339,10 @@ export function buildHeuristicTrainingSupport(
   const builtModules: TrainingSupportModule[] = [];
   let modulesMissingCase = 0;
 
-  for (const module of recommendedModules) {
-    const { node, missingCase } = buildModule(module, inputs.participants);
+  // Renommé `module` → `catalogModule` : Next.js réserve `module`
+  // comme identifiant global (règle @next/next/no-assign-module-variable).
+  for (const catalogModule of recommendedModules) {
+    const { node, missingCase } = buildModule(catalogModule, inputs.participants);
     builtModules.push(node);
     if (missingCase) modulesMissingCase += 1;
   }

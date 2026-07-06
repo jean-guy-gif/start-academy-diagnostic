@@ -459,26 +459,28 @@ export function buildHeuristicDesignedSupport(
   slides.push(buildObjective(inputs.support));
   slides.push(buildProgram(inputs.support));
 
-  for (const module of inputs.support.modules) {
-    const isFoundationTool = isFoundationToolModule(module);
-    slides.push(buildProblem(module));
-    slides.push(buildAwareness(module));
-    slides.push(buildFundamentals(module, isFoundationTool));
-    if (shouldBuildAccelerator(module)) {
-      slides.push(buildAccelerator(module));
+  // Renommé `module` → `catalogModule` : Next.js réserve `module`
+  // comme identifiant global (règle @next/next/no-assign-module-variable).
+  for (const catalogModule of inputs.support.modules) {
+    const isFoundationTool = isFoundationToolModule(catalogModule);
+    slides.push(buildProblem(catalogModule));
+    slides.push(buildAwareness(catalogModule));
+    slides.push(buildFundamentals(catalogModule, isFoundationTool));
+    if (shouldBuildAccelerator(catalogModule)) {
+      slides.push(buildAccelerator(catalogModule));
     }
-    slides.push(buildExercise(module));
-    if (shouldBuildCaseStudy(module)) {
-      slides.push(buildCaseStudy(module));
+    slides.push(buildExercise(catalogModule));
+    if (shouldBuildCaseStudy(catalogModule)) {
+      slides.push(buildCaseStudy(catalogModule));
     } else if (!isFoundationTool) {
       // Pour les modules socles outils, ne pas pousser de warning :
       // aucun cas réel n'est pertinent pour un module « ChatGPT »
       // ou « Prompt » — l'exercice est par nature générique métier.
       warnings.push(
-        `Module « ${module.moduleTitle} » : aucun cas réel collaborateur disponible — slide case_study omise.`
+        `Module « ${catalogModule.moduleTitle} » : aucun cas réel collaborateur disponible — slide case_study omise.`
       );
     }
-    slides.push(buildFieldAction(module));
+    slides.push(buildFieldAction(catalogModule));
   }
 
   slides.push(buildSummary(inputs.support));

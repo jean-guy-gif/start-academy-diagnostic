@@ -34,6 +34,10 @@ dev.log
 # backups (dumps SQL + Storage) — jamais commiter
 /backups/
 
+# supabase CLI — état runtime local (project-ref, versions cachées,
+# pooler-url…). Rien de secret mais rien à versionner.
+/supabase/.temp/
+
 # env files (can opt-in for committing if needed)
 .env*
 

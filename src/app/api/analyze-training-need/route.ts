@@ -15,6 +15,7 @@ import {
   createSupabaseServerClient,
 } from "@/lib/supabase/server";
 import { calculateCostPerParticipant } from "@/lib/pricing/training-pricing";
+import { ANSWER_CATEGORIES } from "@/types";
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
 import { assertCanAccessDiagnostic } from "@/lib/auth/assert-diagnostic-access";
@@ -91,14 +92,8 @@ const AnswerPayloadSchema = z.object({
   diagnosticId: z.string(),
   questionId: z.string(),
   questionText: z.string(),
-  category: z
-    .enum([
-      "tool_maturity",
-      "commercial_performance",
-      "business_skill",
-      "execution",
-    ])
-    .nullable(),
+  // T-3 (fix 2026-07-08) : source unique ANSWER_CATEGORIES.
+  category: z.enum(ANSWER_CATEGORIES).nullable(),
   answer: z.string().nullable(),
   note: z.string().nullable(),
   isWeakSignal: z.boolean(),

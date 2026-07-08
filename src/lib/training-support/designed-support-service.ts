@@ -204,7 +204,7 @@ export async function saveDesignedSupport(
             subtitle: input.design.designSubtitle || null,
             visual_intent: input.design.visualIntent || null,
             designed_json: input.design as unknown as Json,
-            source: input.source as "openrouter" | "heuristic",
+            source: input.source,
             model: input.model,
             confidence_score: Math.round(input.design.confidenceScore),
             status: "draft",

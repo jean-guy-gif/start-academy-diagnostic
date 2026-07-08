@@ -61,26 +61,37 @@ export interface Client {
  * Catégorie d'une réponse — union élargie v1.0 pour aligner sur les
  * 11 chapitres du référentiel. Les 4 valeurs MVP1 sont conservées et
  * restent valides côté base (cf. migration 20260704).
+ *
+ * Source unique de vérité (T-3, fix 2026-07-08) : la constante
+ * `ANSWER_CATEGORIES` sert à la fois de source runtime (Zod enums,
+ * itérations) et de source type (via `(typeof ANSWER_CATEGORIES)[number]`).
+ * Ne PAS dupliquer cette liste ailleurs — les routes API
+ * `answers/route.ts` etc. importent la constante directement.
+ * Doit rester ⊆ des valeurs autorisées par le check_constraint
+ * `diagnostic_answers_category_check` (migration 20260704).
  */
-export type AnswerCategory =
+export const ANSWER_CATEGORIES = [
   // Valeurs MVP1 (rétro-compat, ne pas retirer)
-  | "tool_maturity"
-  | "commercial_performance"
-  | "business_skill"
-  | "execution"
+  "tool_maturity",
+  "commercial_performance",
+  "business_skill",
+  "execution",
   // Valeurs v1.0 alignées sur les chapitres du référentiel
-  | "identity"           // Ch. 1
-  | "team"               // Ch. 2 effectifs
-  | "funding"            // Ch. 2.4 financement
-  | "prospecting"        // Ch. 3
-  | "seller_meeting"     // Ch. 4
-  | "mandates"           // Ch. 5
-  | "commercial_followup" // Ch. 6
-  | "buyers"             // Ch. 7
-  | "visits_offers"      // Ch. 8
-  | "db_reputation"      // Ch. 9
-  | "tools_ai"           // Ch. 10
-  | "management";        // Ch. 11
+  "identity",            // Ch. 1
+  "team",                // Ch. 2 effectifs
+  "funding",             // Ch. 2.4 financement
+  "prospecting",         // Ch. 3
+  "seller_meeting",      // Ch. 4
+  "mandates",            // Ch. 5
+  "commercial_followup", // Ch. 6
+  "buyers",              // Ch. 7
+  "visits_offers",       // Ch. 8
+  "db_reputation",       // Ch. 9
+  "tools_ai",            // Ch. 10
+  "management",          // Ch. 11
+] as const;
+
+export type AnswerCategory = (typeof ANSWER_CATEGORIES)[number];
 
 /**
  * Type de réponse attendu — utilisé par la UI pour choisir le

@@ -199,7 +199,7 @@ export async function saveTrainingSupport(
             recommendation_id: input.recommendationId,
             title: input.support.supportTitle,
             support_json: input.support as unknown as Json,
-            source: input.source as "openrouter" | "heuristic",
+            source: input.source,
             model: input.model,
             confidence_score: Math.round(input.support.confidenceScore),
             status: "draft",

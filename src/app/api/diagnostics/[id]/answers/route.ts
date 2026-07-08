@@ -5,6 +5,7 @@ import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
 import { refreshDiagnosticSnapshots } from "@/lib/diagnostics/refresh-snapshots";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { ANSWER_CATEGORIES } from "@/types";
 
 export const runtime = "nodejs";
 
@@ -15,15 +16,10 @@ interface RouteContext {
 const BodySchema = z.object({
   questionId: z.string().min(1).max(200),
   questionText: z.string().min(1).max(2000),
-  category: z
-    .enum([
-      "tool_maturity",
-      "commercial_performance",
-      "business_skill",
-      "execution",
-    ])
-    .nullable()
-    .optional(),
+  // T-3 (fix 2026-07-08) : consomme ANSWER_CATEGORIES comme source
+  // unique — pas de duplication. Aligné avec le check_constraint
+  // `diagnostic_answers_category_check` (migration 20260704).
+  category: z.enum(ANSWER_CATEGORIES).nullable().optional(),
   answer: z.string().max(4000).nullable().optional(),
   note: z.string().max(2000).nullable().optional(),
   isWeakSignal: z.boolean().default(false),

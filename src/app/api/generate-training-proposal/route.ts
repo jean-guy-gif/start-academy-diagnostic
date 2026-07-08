@@ -394,9 +394,14 @@ export async function POST(request: Request) {
   const diagParticipants = await listDiagnosticParticipants(
     context.diagnostic.id
   );
+  // T-6 (fix 2026-07-08) : propage eligibleOpco pour que la branche
+  // salarié OPCO EP du moteur funding soit prise en compte. Sans ça,
+  // estimateTrainingFunding retourne 0 € pour tout salarié éligible
+  // (manque à gagner commercial visible sur la proposition).
   const fundingParticipants = diagParticipants.map((p) => ({
     professionalStatus: p.professionalStatus as ParticipantProfessionalStatus | null,
     previousYearProduction: p.previousYearProduction,
+    eligibleOpco: p.eligibleOpco ?? null,
   }));
 
   let result: ProposalGenerationResult | null = null;

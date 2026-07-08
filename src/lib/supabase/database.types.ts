@@ -983,7 +983,7 @@ export type Database = {
           recommendation_id: string | null;
           title: string;
           support_json: Json;
-          source: "openrouter" | "heuristic";
+          source: "openrouter" | "heuristic" | "llm";
           model: string | null;
           confidence_score: number | null;
           status: "draft" | "validated" | "archived";
@@ -998,7 +998,7 @@ export type Database = {
           recommendation_id?: string | null;
           title: string;
           support_json: Json;
-          source: "openrouter" | "heuristic";
+          source: "openrouter" | "heuristic" | "llm";
           model?: string | null;
           confidence_score?: number | null;
           status?: "draft" | "validated" | "archived";
@@ -1013,7 +1013,7 @@ export type Database = {
           recommendation_id?: string | null;
           title?: string;
           support_json?: Json;
-          source?: "openrouter" | "heuristic";
+          source?: "openrouter" | "heuristic" | "llm";
           model?: string | null;
           confidence_score?: number | null;
           status?: "draft" | "validated" | "archived";
@@ -1037,7 +1037,7 @@ export type Database = {
           subtitle: string | null;
           visual_intent: string | null;
           designed_json: Json;
-          source: "openrouter" | "heuristic";
+          source: "openrouter" | "heuristic" | "llm";
           model: string | null;
           confidence_score: number | null;
           status: "draft" | "validated" | "archived";
@@ -1053,7 +1053,7 @@ export type Database = {
           subtitle?: string | null;
           visual_intent?: string | null;
           designed_json: Json;
-          source: "openrouter" | "heuristic";
+          source: "openrouter" | "heuristic" | "llm";
           model?: string | null;
           confidence_score?: number | null;
           status?: "draft" | "validated" | "archived";
@@ -1069,7 +1069,7 @@ export type Database = {
           subtitle?: string | null;
           visual_intent?: string | null;
           designed_json?: Json;
-          source?: "openrouter" | "heuristic";
+          source?: "openrouter" | "heuristic" | "llm";
           model?: string | null;
           confidence_score?: number | null;
           status?: "draft" | "validated" | "archived";

@@ -175,6 +175,49 @@ describe("estimateTrainingFunding — agrégation multi-participants", () => {
     expect(summary.totalParticipantCount).toBe(3);
     expect(summary.disclaimer).toBe(FUNDING_DISCLAIMER);
   });
+
+  // T-6 (2026-07-08) : test non-optionnel. La route
+  // generate-training-proposal mappait fundingParticipants sans
+  // propager `eligibleOpco`, la branche salarié OPCO ne se déclenchait
+  // jamais. Ce test verrouille le cas mixte : 2 indés éligibles +
+  // 2 salariés OPCO éligibles → le total inclut bien la part OPCO
+  // (2 × 2 500 € = 5 000 €).
+  it("mix 2 indés éligibles + 2 salariés eligibleOpco:true → total inclut la part OPCO", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: [
+        {
+          professionalStatus: "agent_commercial_independant",
+          previousYearProduction: 15_000,
+        },
+        {
+          professionalStatus: "agent_commercial_independant",
+          previousYearProduction: 12_000,
+        },
+        {
+          professionalStatus: "salarie",
+          previousYearProduction: null,
+          eligibleOpco: true,
+        },
+        {
+          professionalStatus: "salarie",
+          previousYearProduction: null,
+          eligibleOpco: true,
+        },
+      ],
+    });
+    // 2 × 3 000 (AGEFICE) + 2 × 2 500 (OPCO) = 11 000 €
+    expect(summary.eligibleParticipantCount).toBe(4);
+    expect(summary.estimatedFundingTotal).toBe(
+      2 * MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT +
+        2 * OPCO_EP_ANNUAL_CAP_DEFAULT
+    );
+    // Guard-rail explicite : la part OPCO n'est pas égarée.
+    expect(summary.estimatedFundingTotal).toBeGreaterThanOrEqual(
+      2 * OPCO_EP_ANNUAL_CAP_DEFAULT
+    );
+  });
 });
 
 describe("estimateOpcoBudget", () => {

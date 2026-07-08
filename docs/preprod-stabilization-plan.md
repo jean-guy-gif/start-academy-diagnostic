@@ -76,9 +76,11 @@ supabase_migrations.schema_migrations order by version`).
 | `20260523130000_add_designed_training_supports.sql` | `designed_training_supports` | `\d public.designed_training_supports` |
 | `20260524120000_auth_socle.sql` | rôles + trigger `handle_new_user` | `select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;` |
 | `20260525120000_public_access_tokens.sql` | `public_access_tokens` | `\d public.public_access_tokens` |
+| `20260526120000_add_participant_admin_fields.sql` | champs admin sur `session_participants` | — |
 | `20260526120100_create_session_documents_bucket.sql` | bucket Storage | `select id, public from storage.buckets where id = 'session-documents';` → `public = false` |
 | `20260527120000_add_session_date_options.sql` | `session_date_options` | — |
 | `20260528120000_add_diagnostic_participants.sql` | `diagnostic_participants` | — |
+| `20260528120100_add_recommendation_modules_priority_tier.sql` | `recommendation_modules.priority_tier` | — |
 | `20260530120000_add_activity_logs.sql` | `activity_logs` | — |
 | `20260601100000_extend_ai_generation_logs.sql` | `ai_generation_logs` étendu (`route`, `source`, `total_tokens`, status `fallback`) | `select column_name from information_schema.columns where table_name = 'ai_generation_logs';` |
 | `20260602100000_rls_hardening_phase_1.sql` | RLS Phase 1 + helpers `is_admin`, `is_internal_user`, `get_my_role` | `select proname from pg_proc where proname in ('is_admin','is_internal_user','get_my_role');` |
@@ -92,8 +94,13 @@ supabase_migrations.schema_migrations order by version`).
 | `20260610100000_ai_logs_status_rate_limited.sql` | status `rate_limited` autorisé | `select pg_get_constraintdef(oid) from pg_constraint where conname = 'ai_generation_logs_status_check';` contient `rate_limited` |
 | `20260611100000_add_support_quality_reviews.sql` | `support_quality_reviews` | — |
 | `20260612100000_add_post_training_reviews.sql` | `post_training_reviews` | — |
+| `20260701100000_extend_clients_diagnostics_identity.sql` | Ch.1 identité stable clients + effectifs/temporel/Ch.2.4 sur `diagnostics` | `select column_name from information_schema.columns where table_name='diagnostics' and column_name='ratios_snapshot';` (pas encore là, mais colonnes v1.0 ajoutées) |
+| `20260702100000_extend_diagnostic_participants.sql` | fiches indé/salarié + historique formation 24m (Ch.2.2/2.3) | `select column_name from information_schema.columns where table_name='diagnostic_participants' and column_name in ('expert_level','eligible_opco','formations_24m_count');` (3 lignes) |
+| `20260703100000_add_funding_config.sql` | table `funding_config` versionnée + 4 seeds AGEFICE/OPCO | `select key, value_numeric from public.funding_config where valid_to is null order by key;` (4 lignes : `AGEFICE_ANNUAL_CAP=3000`, `AGEFICE_THRESHOLD=7000`, `CONSUMPTION_LEVER_PERCENT=30`, `OPCO_EP_ANNUAL_CAP=2500`) |
+| `20260704100000_extend_diagnostic_answers_categories.sql` | check_constraint étendu à 15 valeurs (4 MVP1 + 11 chapitres v1.0) | `select pg_get_constraintdef(oid) from pg_constraint where conname='diagnostic_answers_category_check';` contient `identity, team, funding, prospecting, seller_meeting, mandates, commercial_followup, buyers, visits_offers, db_reputation, tools_ai, management` |
+| `20260705100000_add_diagnostic_snapshots.sql` | `diagnostics.ratios_snapshot`, `alerts_snapshot` jsonb | `select column_name from information_schema.columns where table_name='diagnostics' and column_name in ('ratios_snapshot','alerts_snapshot');` (2 lignes) |
 
-**Acceptance critère §3** : les 22 migrations sont présentes dans
+**Acceptance critère §3** : les 29 migrations sont présentes dans
 `supabase_migrations.schema_migrations`, le grep
 `to anon` sur `supabase/migrations/` retourne 0 occurrence.
 
@@ -248,6 +255,16 @@ admin), mais l'API admin client bypasse RLS.
 ### 6.1 Procédure manuelle (avant chaque grosse démo)
 
 Documenté dans `operations-runbook.md` §4 — récap rapide :
+
+> **⚠️ Note dump schéma vs données** : `supabase db dump --linked
+> --schema public` (CLI 2.101+) produit un dump **schéma seul par
+> défaut** (tables + indexes + policies + fonctions + triggers, aucun
+> `INSERT`/`COPY`). Tant que la base préprod est vide, c'est suffisant
+> pour reconstruire (re-apply migrations + seed). **Dès qu'elle
+> contiendra des données de smoke ou de pilote, ajouter un second
+> dump `--data-only`** :
+> `supabase db dump --linked --schema public --data-only --file backup_data_$(date +%Y%m%d_%H%M).sql`.
+> Les deux fichiers sont à archiver ensemble.
 
 ```bash
 # 1. Dump SQL (15-30 secondes)
@@ -483,7 +500,7 @@ absorbées dans un lot de nettoyage lint transverse (post-pilote).
 - **Ne pas modifier le code** pendant le sprint stabilisation
   (sauf correctif identifié dans §11.2 / §11.3, sous forme de
   hotfix ciblé).
-- **Ne pas créer de migration** SQL nouvelle. Les 22 migrations
+- **Ne pas créer de migration** SQL nouvelle. Les 29 migrations
   listées §3 sont l'état figé.
 - **Ne pas brancher** Gmail / Calendar / Drive — la valeur ajoutée
   passera par le pilote distant et la mesure d'usage avant
@@ -531,6 +548,46 @@ Tickets ouverts :
 Décisions de report documentées :
   - <sujet> — raison : <texte> — date cible : <YYYY-MM-DD>
 ```
+
+### 13.1 Sprint courant — instance vivante (2026-07-07 →)
+
+Ce bloc est **le seul instance-log** de sprint tenu directement dans
+git. Il est complété au fur et à mesure et servira de source de
+vérité tant qu'aucun outil externe (Notion / Google Docs) n'est mis
+en place. À archiver et remettre à zéro au démarrage d'un sprint
+distinct.
+
+**Registre §2 → §11**
+
+- Pré-requis techniques §2 : ⏳ non consolidé (env vars à vérifier)
+- Checklist migrations §3 : ✅ **OK — 29/29 migrations appliquées**
+  - Push effectué **2026-07-07** via `supabase db push`
+  - **Delta appliqué : 6 migrations (`20260612100000` → `20260705100000`)** — la `20260612` (`add_post_training_reviews`) était restée sur le quai en MVP1, elle est passée dans le même lot que les 5 v1.0
+  - **Backup pré-push** : `backups/preprod_before_v1.0b_20260707_1800.sql` — **75 kB, schéma seul** (base sans données, cohérent avec `table-stats` 0 row partout au moment du dump)
+  - **Vérifications post-push PostgREST** ✅ vertes :
+    - `funding_config` : 4 seeds actifs (`AGEFICE_ANNUAL_CAP=3000`, `AGEFICE_THRESHOLD=7000`, `CONSUMPTION_LEVER_PERCENT=30`, `OPCO_EP_ANNUAL_CAP=2500`)
+    - `diagnostics.ratios_snapshot`, `alerts_snapshot` : HTTP 200 sur select ciblé
+    - `diagnostic_participants` v1.0 (`expert_level`, `eligible_opco`, `formations_24m_count`) : HTTP 200
+    - `post_training_reviews` : présente (48 kB, 0 row, RLS à confirmer par check SQL brut)
+  - **4 checks SQL bruts en cours de consolidation** (côté dashboard SQL Editor de Laurent) :
+    - `pg_class.relrowsecurity` sur `post_training_reviews` (attendu : true)
+    - `pg_tables where rowsecurity = false` sur schema public (attendu : 0 ligne)
+    - `pg_policies where 'anon' = any(roles)` (attendu : 0 ligne)
+    - `pg_get_constraintdef(diagnostic_answers_category_check)` (attendu : 15 valeurs)
+- Smoke fonctionnels §4 : ⏳ non lancé
+- Smoke sécurité §5 : ⏳ non lancé
+- Backup §6 : ✅ artefact schéma-seul créé, `--data-only` à ajouter dès que la base contient des données (cf. §6.1 note)
+- Restauration §7 : ⏳ non testée
+- Audit Storage §8 : ⏳ non fait (bucket `session-documents` = 2 objets de test dev, pas de contenu métier à ce jour)
+- Rotation service_role §9 : ⏳ non faite
+
+**Tickets ouverts**
+
+- T-1 : compléter les 4 checks SQL bruts et re-cocher §3 en « OK smoke SQL complet » — owner : Laurent — deadline : sur retour dashboard
+
+**Décisions de report documentées**
+
+- Protection branche serveur GitHub : reportée à activation Pro (cf. §11.4 + README « Workflow Git »). Garde-fou en place : hook client `.githooks/pre-push` + CI verrou logique.
 
 ---
 

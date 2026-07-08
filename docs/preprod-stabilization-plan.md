@@ -110,17 +110,108 @@ supabase_migrations.schema_migrations order by version`).
 
 ### 4.1 Préparation
 
-Créer 3 comptes auth dans Supabase :
+**Contexte** : l'app n'expose **pas de page signup** — seul un
+`signInWithPassword` sur `/login`. Toute création de compte passe
+donc par le dashboard Supabase (Authentication → Users).
 
-| Compte | Email | Rôle profile |
+**Rôles reconnus** (check constraint `profiles_role_check` +
+migration `20260524120000_auth_socle`) : `admin`, `commercial`,
+`trainer`, `client_viewer`, `participant`.
+
+**Sémantique des helpers RLS** (fonctions SECURITY DEFINER,
+migration `20260602100000_rls_hardening_phase_1`) :
+
+- `public.is_admin()` retourne `true` **si et seulement si**
+  `profiles.role = 'admin'`.
+- `public.is_internal_user()` retourne `true` si
+  `profiles.role in ('admin', 'commercial', 'trainer')`. C'est le
+  garde-fou de toutes les routes internes `INTERNAL_APP_ROLES`.
+- `client_viewer` et `participant` ne comptent **pas** comme
+  internes — ils voient les pages publiques via tokens, jamais le
+  cockpit.
+
+**Trigger d'auto-création `on_auth_user_created`** : à chaque INSERT
+sur `auth.users`, la fonction `public.handle_new_user()` insère une
+ligne dans `public.profiles` avec :
+
+- `role` extrait de `raw_user_meta_data->>'role'` **s'il fait partie
+  de la liste blanche** (`admin`, `commercial`, `trainer`,
+  `client_viewer`, `participant`), sinon **défaut = `commercial`**.
+- `full_name` extrait de `raw_user_meta_data->>'full_name'` (peut
+  être null).
+- `organization` extrait de `raw_user_meta_data->>'organization'`
+  (peut être null).
+
+**Trois comptes à créer** :
+
+| Compte | Email | Rôle profile cible |
 |---|---|---|
-| Admin | admin@start-academy.test | `admin` |
-| Commercial A | commerciala@start-academy.test | `commercial` |
-| Commercial B | commercialb@start-academy.test | `commercial` |
+| Admin | `admin@start-academy.test` | `admin` |
+| Commercial A | `commerciala@start-academy.test` | `commercial` |
+| Commercial B | `commercialb@start-academy.test` | `commercial` |
 
-Pour chaque compte créé, vérifier que `public.profiles` contient
-bien la ligne avec le bon `role` (le trigger `handle_new_user`
-défaute à `commercial` — éditer la ligne admin manuellement).
+#### Procédure — voie 1 (recommandée) : Dashboard Supabase → Add user
+
+Dashboard preprod → Authentication → Users → **Add user** → *Create
+new user*. Cocher **Auto Confirm User** (sinon compte inutilisable
+avant confirmation email). Renseigner email + password provisoire.
+
+**Impact du trigger** : la ligne `profiles` est créée automatiquement
+avec `role = 'commercial'` (par défaut — le dashboard ne permet pas
+de renseigner `raw_user_meta_data.role` au moment de la création
+manuelle).
+
+**Correction admin** : pour passer `admin@start-academy.test` en
+`role = 'admin'`, exécuter dans SQL Editor **immédiatement après la
+création** :
+
+```sql
+update public.profiles
+set role = 'admin'
+where email = 'admin@start-academy.test';
+
+-- Vérification
+select id, email, role, organization
+from public.profiles
+where email in (
+  'admin@start-academy.test',
+  'commerciala@start-academy.test',
+  'commercialb@start-academy.test'
+)
+order by role, email;
+```
+
+**Résultat attendu** : 3 lignes, `admin` en `role = 'admin'`, les
+deux commerciaux en `role = 'commercial'`, `organization = null`.
+
+#### Procédure — voie 2 (alternative) : depuis SQL Editor avec metadata
+
+Contourne l'étape « update après création » en passant le rôle dès
+l'insert `auth.users`. Utile pour scripter la création :
+
+```sql
+-- À exécuter dans SQL Editor du dashboard (rôle service_role).
+-- Répéter pour chaque compte en adaptant email / role / password.
+select auth.admin_create_user(jsonb_build_object(
+  'email',         'admin@start-academy.test',
+  'password',      '<mot de passe fort>',
+  'email_confirm', true,
+  'user_metadata', jsonb_build_object(
+    'role', 'admin',
+    'full_name', 'Admin Test'
+  )
+));
+```
+
+Le trigger `handle_new_user` lit `user_metadata.role` et pose
+directement `profiles.role = 'admin'` — aucun UPDATE nécessaire.
+
+#### Voie non-recommandée : signup par l'app
+
+Impossible en l'état — pas de page signup, `signInWithPassword`
+uniquement. Ne pas activer de route signup dans le code applicatif
+pour ce smoke : garder l'app cohérente avec sa cible produit
+(comptes créés en interne, jamais par les commerciaux eux-mêmes).
 
 ### 4.2 Scénario complet (Commercial A)
 
@@ -589,6 +680,65 @@ distinct.
 **Décisions de report documentées**
 
 - Protection branche serveur GitHub : reportée à activation Pro (cf. §11.4 + README « Workflow Git »). Garde-fou en place : hook client `.githooks/pre-push` + CI verrou logique.
+
+### 13.1.1 Registre de smoke §4 — à cocher pendant l'exécution
+
+Registre vivant à cocher au fur et à mesure. Colonne **Verdict** :
+`✅` OK, `❌` échec, `⚠️` OK avec réserve. Chaque `❌` ou `⚠️` doit
+générer un ticket §11.2 dans les **Tickets ouverts** ci-dessus.
+
+**§4.2 Scénario complet Commercial A** (source unique : §4.2 du même
+document ; les IDs de compte ci-dessous supposent que §4.1 a été
+suivi)
+
+| # | Étape | Compte utilisé | Verdict | Note |
+|---|---|---|---|---|
+| 1 | Login A → `/cockpit` : KPIs cohérents, pas de session A pré-existante | Commercial A | ☐ | |
+| 2 | `/diagnostics/new` : créer client + diagnostic mode `guided` → `clients.created_by = userA.id`, `diagnostics.created_by = userA.id` | Commercial A | ☐ | |
+| 3 | Renseigner 5 réponses + 3 participants prévisionnels → `diagnostic_answers × 5`, `diagnostic_participants × 3` | Commercial A | ☐ | |
+| 4 | Statut diagnostic → `to_review` → journal `diagnostic_completed` | Commercial A | ☐ | |
+| 5 | Recommandation IA via `/diagnostics/<id>/recommendation` → `recommendations` créée, `recommendation_modules ≥ 1`, journal `recommendation_generated`, `ai_generation_logs.status = success` (ou `fallback`) | Commercial A | ☐ | |
+| 6 | Proposition via `/diagnostics/<id>/proposal` → journal `proposal_generated`, ligne `ai_generation_logs` | Commercial A | ☐ | |
+| 7 | Créer session depuis la fiche diagnostic → `training_sessions.created_by = userA.id`, journal `session_created` | Commercial A | ☐ | |
+| 8 | Créer lien dirigeant `client_session_view` → `public_access_tokens` créée, URL affichée 1 fois, journal `access_link_created` | Commercial A | ☐ | |
+| 9 | Ouvrir le lien dirigeant en navigation privée : page rendue, agrégats funding affichés, **aucun N-1 individuel** | Dirigeant (anon) | ☐ | vérif visuelle indispensable |
+| 10 | Créer 2 créneaux → `session_date_options × 2`, journal × 2 | Commercial A | ☐ | |
+| 11 | Sélectionner un créneau depuis la page dirigeant → `selected_at` posé, autres en `proposed`, journal `date_option_selected` | Dirigeant (anon) | ☐ | |
+| 12 | Créer lien collaborateur `participant_collect` | Commercial A | ☐ | |
+| 13 | Soumettre un participant depuis la page collecte → `session_participants` créée, journal `participant_submitted` | Collab (anon) | ☐ | |
+| 14 | Upload document CNI fictive 1 Mo → `session_documents` créée, blob dans Storage, journal `document_uploaded` | Collab (anon) | ☐ | |
+| 15 | Génération support brut → `training_supports` créée, journal `training_support_generated`, ligne `ai_generation_logs` | Commercial A | ☐ | |
+| 16 | Génération support designé → `designed_training_supports` créée, journal `designed_support_generated` | Commercial A | ☐ | |
+| 17 | Validation pédagogique : noter 8 critères 0..3, valider → `support_quality_reviews.status = validated`, score calculé, journal `support_quality_validated` | Commercial A | ☐ | |
+| 18 | Passer le support designé à `validated` via bouton DesignReady → `designed_training_supports.status = validated` | Commercial A | ☐ | |
+| 19 | Faire passer la session à `delivered` (fiche session ou SQL admin) → `training_sessions.status = delivered` | Commercial A ou Admin | ☐ | |
+| 20 | Suivi post-formation : 4 scores + 2 réussites + 1 blocage + 1 action → `post_training_reviews` créée, journal `post_training_review_created` | Commercial A | ☐ | v1.0b — table poussée 2026-07-07 |
+| 21 | Marquer le suivi post-formation `completed` → `post_training_reviews.status = completed`, journal `post_training_review_completed` | Commercial A | ☐ | |
+| 22 | Retour `/cockpit` → KPI à jour : « Supports à valider » −1, « Suivis post-formation à compléter » −1 | Commercial A | ☐ | |
+
+**§4.3 Vérifications cockpit** (fin de scénario)
+
+| # | Étape | Compte utilisé | Verdict | Note |
+|---|---|---|---|---|
+| C1 | Bloc « Vue synthèse » : tous les KPIs cohérents avec le scénario | Commercial A | ☐ | |
+| C2 | Bloc « Actions prioritaires » : pas de `validate_support_quality` ni `complete_post_training_review` pour la session A après étapes 17 et 21 | Commercial A | ☐ | |
+| C3 | Bloc « Pipeline formation » : session A listée avec étape `delivered` | Commercial A | ☐ | |
+| C4 | Bloc « Activité récente » : 10 derniers événements visibles | Commercial A | ☐ | |
+| C5 | Bloc « Usage IA » : appels aujourd'hui ≥ 4, coût 7 j non nul, taux fallback cohérent avec présence/absence `OPENROUTER_API_KEY` | Commercial A | ☐ | |
+| C6 | Bloc « Budget IA mensuel » : status `ok`/`warning`, 3 KPIs renseignés, barre progression visible | Commercial A | ☐ | |
+
+**Vérifications v1.0b** (nouvelles capacités poussées 2026-07-07 —
+ces 3 lignes n'existent pas dans §4.2/§4.3 historiques)
+
+| # | Étape | Compte utilisé | Verdict | Note |
+|---|---|---|---|---|
+| v1.0b-1 | Après complétion du diagnostic (étape 4), `diagnostics.ratios_snapshot` et `alerts_snapshot` sont **non-null** sur la ligne concernée — preuve que `refreshDiagnosticSnapshots` écrit bien best-effort via le client route handler cookie (jamais service_role). Requête SQL à coller dans le dashboard : <br>`select id, status, ratios_snapshot is not null as has_ratios, alerts_snapshot is not null as has_alerts, jsonb_array_length(coalesce(alerts_snapshot->'alerts','[]'::jsonb)) as alerts_count from public.diagnostics where created_by = (select id from public.profiles where email = 'commerciala@start-academy.test') order by created_at desc limit 1;` <br>Attendu : `has_ratios = true`, `has_alerts = true`, `alerts_count ≥ 0`. | Commercial A + SQL admin | ☐ | |
+| v1.0b-2 | Pendant la saisie du diagnostic (étape 3), les 2 synthèses intermédiaires s'affichent au bon moment : **« Potentiel de financement »** après la dernière question du Chapitre 2 (bloc budget mobilisable + taux de consommation `environ X %` + alertes financement) et **« Pipeline de transformation »** après la dernière question du Chapitre 8 (funnel 5 étapes vs benchmarks + 2 étapes les plus faibles surlignées). Boutons `Passer` et `Continuer` disponibles — jamais bloquants. | Commercial A | ☐ | vérif UI purement visuelle |
+| v1.0b-3 | La recommandation IA générée à l'étape 5 cite **au moins un ratio en alerte** dans ses `performanceIssues` ou son `commercialExplanation` — preuve que les 3 blocs autoritaires (ratios / alertes / financement) sont consommés par le LLM (règles 12-14 du SYSTEM_PROMPT). Croiser avec le contenu de `alerts_snapshot` (v1.0b-1). Si l'IA a acknowledgé des alertes, `alertsAcknowledged` non-vide dans la réponse. | Commercial A | ☐ | fallback heuristique local si `OPENROUTER_API_KEY` KO → alertes non consommées, marquer ⚠️ + noter fallback |
+
+**Acceptance §13.1.1** : 31 lignes en `✅`. Toute ligne en `❌` ou
+`⚠️` génère un ticket §11.2 dans **Tickets ouverts** ci-dessus, avec
+description + owner + deadline.
 
 ---
 

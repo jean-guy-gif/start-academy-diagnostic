@@ -31,6 +31,9 @@ yarn-error.log*
 .pnpm-debug.log*
 dev.log
 
+# backups (dumps SQL + Storage) — jamais commiter
+/backups/
+
 # env files (can opt-in for committing if needed)
 .env*
 

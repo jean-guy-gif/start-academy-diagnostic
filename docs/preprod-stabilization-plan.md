@@ -569,11 +569,12 @@ distinct.
     - `diagnostics.ratios_snapshot`, `alerts_snapshot` : HTTP 200 sur select ciblé
     - `diagnostic_participants` v1.0 (`expert_level`, `eligible_opco`, `formations_24m_count`) : HTTP 200
     - `post_training_reviews` : présente (48 kB, 0 row, RLS à confirmer par check SQL brut)
-  - **4 checks SQL bruts en cours de consolidation** (côté dashboard SQL Editor de Laurent) :
-    - `pg_class.relrowsecurity` sur `post_training_reviews` (attendu : true)
-    - `pg_tables where rowsecurity = false` sur schema public (attendu : 0 ligne)
-    - `pg_policies where 'anon' = any(roles)` (attendu : 0 ligne)
-    - `pg_get_constraintdef(diagnostic_answers_category_check)` (attendu : 15 valeurs)
+  - **4 checks SQL bruts** ✅ **conformes, vérifiés via SQL Editor dashboard, revue validée 2026-07-07** :
+    - ✅ `pg_class.relrowsecurity` sur `post_training_reviews` = **true**
+    - ✅ `pg_tables where rowsecurity = false` sur schema public = **0 ligne** (toutes les 21 tables ont RLS active)
+    - ✅ `pg_policies where 'anon' = any(roles)` = **0 ligne** (aucun accès anon non-délibéré)
+    - ✅ `pg_get_constraintdef(diagnostic_answers_category_check)` contient les **15 valeurs exactes** (4 MVP1 + 11 chapitres) avec `IS NULL` toléré
+  - **Item « push migrations préprod » désormais intégralement clos.**
 - Smoke fonctionnels §4 : ⏳ non lancé
 - Smoke sécurité §5 : ⏳ non lancé
 - Backup §6 : ✅ artefact schéma-seul créé, `--data-only` à ajouter dès que la base contient des données (cf. §6.1 note)
@@ -583,7 +584,7 @@ distinct.
 
 **Tickets ouverts**
 
-- T-1 : compléter les 4 checks SQL bruts et re-cocher §3 en « OK smoke SQL complet » — owner : Laurent — deadline : sur retour dashboard
+- (aucun — T-1 clos 2026-07-07 : 4 checks SQL bruts conformes, item « push migrations préprod » intégralement validé)
 
 **Décisions de report documentées**
 

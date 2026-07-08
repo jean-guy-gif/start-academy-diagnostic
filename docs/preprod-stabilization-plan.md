@@ -490,7 +490,7 @@ Tous OUI = pré-prod validée pour pilote distant contrôlé.
 
 | # | Critère | Statut |
 |---|---|---|
-| 1 | 100 % des smoke fonctionnels §4.2 + §4.3 passent | ☐ |
+| 1 | 100 % des smoke fonctionnels §4.2 + §4.3 passent | ✅ (2026-07-08, cf. §13.1.1) |
 | 2 | 100 % des smoke sécurité §5.1 → §5.5 passent (avec confirmation §5.2.14 résolue OU finding ouvert) | ☐ |
 | 3 | Backup §6 réalisé et stocké en coffre chiffré | ☐ |
 | 4 | Restauration §7 testée au moins partiellement (3 tables + 1 objet Storage) | ☐ |
@@ -705,52 +705,135 @@ suivi)
 
 | # | Étape | Compte utilisé | Verdict | Note |
 |---|---|---|---|---|
-| 1 | Login A → `/cockpit` : KPIs cohérents, pas de session A pré-existante | Commercial A | ☐ | |
-| 2 | `/diagnostics/new` : créer client + diagnostic mode `guided` → `clients.created_by = userA.id`, `diagnostics.created_by = userA.id` | Commercial A | ☐ | |
-| 3 | Renseigner 5 réponses + 3 participants prévisionnels → `diagnostic_answers × 5`, `diagnostic_participants × 3` | Commercial A | ☐ | |
-| 4 | Statut diagnostic → `to_review` → journal `diagnostic_completed` | Commercial A | ☐ | |
-| 5 | Recommandation IA via `/diagnostics/<id>/recommendation` → `recommendations` créée, `recommendation_modules ≥ 1`, journal `recommendation_generated`, `ai_generation_logs.status = success` (ou `fallback`) | Commercial A | ☐ | |
-| 6 | Proposition via `/diagnostics/<id>/proposal` → journal `proposal_generated`, ligne `ai_generation_logs` | Commercial A | ☐ | |
-| 7 | Créer session depuis la fiche diagnostic → `training_sessions.created_by = userA.id`, journal `session_created` | Commercial A | ☐ | |
-| 8 | Créer lien dirigeant `client_session_view` → `public_access_tokens` créée, URL affichée 1 fois, journal `access_link_created` | Commercial A | ☐ | |
-| 9 | Ouvrir le lien dirigeant en navigation privée : page rendue, agrégats funding affichés, **aucun N-1 individuel** | Dirigeant (anon) | ☐ | vérif visuelle indispensable |
-| 10 | Créer 2 créneaux → `session_date_options × 2`, journal × 2 | Commercial A | ☐ | |
-| 11 | Sélectionner un créneau depuis la page dirigeant → `selected_at` posé, autres en `proposed`, journal `date_option_selected` | Dirigeant (anon) | ☐ | |
-| 12 | Créer lien collaborateur `participant_collect` | Commercial A | ☐ | |
-| 13 | Soumettre un participant depuis la page collecte → `session_participants` créée, journal `participant_submitted` | Collab (anon) | ☐ | |
-| 14 | Upload document CNI fictive 1 Mo → `session_documents` créée, blob dans Storage, journal `document_uploaded` | Collab (anon) | ☐ | |
-| 15 | Génération support brut → `training_supports` créée, journal `training_support_generated`, ligne `ai_generation_logs` | Commercial A | ☐ | |
-| 16 | Génération support designé → `designed_training_supports` créée, journal `designed_support_generated` | Commercial A | ☐ | |
-| 17 | Validation pédagogique : noter 8 critères 0..3, valider → `support_quality_reviews.status = validated`, score calculé, journal `support_quality_validated` | Commercial A | ☐ | |
-| 18 | Passer le support designé à `validated` via bouton DesignReady → `designed_training_supports.status = validated` | Commercial A | ☐ | |
-| 19 | Faire passer la session à `delivered` (fiche session ou SQL admin) → `training_sessions.status = delivered` | Commercial A ou Admin | ☐ | |
-| 20 | Suivi post-formation : 4 scores + 2 réussites + 1 blocage + 1 action → `post_training_reviews` créée, journal `post_training_review_created` | Commercial A | ☐ | v1.0b — table poussée 2026-07-07 |
-| 21 | Marquer le suivi post-formation `completed` → `post_training_reviews.status = completed`, journal `post_training_review_completed` | Commercial A | ☐ | |
-| 22 | Retour `/cockpit` → KPI à jour : « Supports à valider » −1, « Suivis post-formation à compléter » −1 | Commercial A | ☐ | |
+| 1 | Login A → `/cockpit` : KPIs cohérents, pas de session A pré-existante | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 2 | `/diagnostics/new` : créer client + diagnostic mode `guided` → `clients.created_by = userA.id`, `diagnostics.created_by = userA.id` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 3 | Renseigner 5 réponses + 3 participants prévisionnels → `diagnostic_answers × 5`, `diagnostic_participants × 3` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 4 | Statut diagnostic → `to_review` → journal `diagnostic_completed` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 5 | Recommandation IA via `/diagnostics/<id>/recommendation` → `recommendations` créée, `recommendation_modules ≥ 1`, journal `recommendation_generated`, `ai_generation_logs.status = success` (ou `fallback`) | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 6 | Proposition via `/diagnostics/<id>/proposal` → journal `proposal_generated`, ligne `ai_generation_logs` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 7 | Créer session depuis la fiche diagnostic → `training_sessions.created_by = userA.id`, journal `session_created` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 8 | Créer lien dirigeant `client_session_view` → `public_access_tokens` créée, URL affichée 1 fois, journal `access_link_created` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 9 | Ouvrir le lien dirigeant en navigation privée : page rendue, agrégats funding affichés, **aucun N-1 individuel** | Dirigeant (anon) | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent (visuel OK) |
+| 10 | Créer 2 créneaux → `session_date_options × 2`, journal × 2 | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 11 | Sélectionner un créneau depuis la page dirigeant → `selected_at` posé, autres en `proposed`, journal `date_option_selected` | Dirigeant (anon) | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 12 | Créer lien collaborateur `participant_collect` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 13 | Soumettre un participant depuis la page collecte → `session_participants` créée, journal `participant_submitted` | Collab (anon) | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 14 | Upload document CNI fictive 1 Mo → `session_documents` créée, blob dans Storage, journal `document_uploaded` | Collab (anon) | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 15 | Génération support brut → `training_supports` créée, journal `training_support_generated`, ligne `ai_generation_logs` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 16 | Génération support designé → `designed_training_supports` créée, journal `designed_support_generated` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 17 | Validation pédagogique : noter 8 critères 0..3, valider → `support_quality_reviews.status = validated`, score calculé, journal `support_quality_validated` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 18 | Passer le support designé à `validated` via bouton DesignReady → `designed_training_supports.status = validated` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 19 | Faire passer la session à `delivered` (fiche session ou SQL admin) → `training_sessions.status = delivered` | Commercial A ou Admin | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 20 | Suivi post-formation : 4 scores + 2 réussites + 1 blocage + 1 action → `post_training_reviews` créée, journal `post_training_review_created` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent (table v1.0b OK) |
+| 21 | Marquer le suivi post-formation `completed` → `post_training_reviews.status = completed`, journal `post_training_review_completed` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| 22 | Retour `/cockpit` → KPI à jour : « Supports à valider » −1, « Suivis post-formation à compléter » −1 | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
 
 **§4.3 Vérifications cockpit** (fin de scénario)
 
 | # | Étape | Compte utilisé | Verdict | Note |
 |---|---|---|---|---|
-| C1 | Bloc « Vue synthèse » : tous les KPIs cohérents avec le scénario | Commercial A | ☐ | |
-| C2 | Bloc « Actions prioritaires » : pas de `validate_support_quality` ni `complete_post_training_review` pour la session A après étapes 17 et 21 | Commercial A | ☐ | |
-| C3 | Bloc « Pipeline formation » : session A listée avec étape `delivered` | Commercial A | ☐ | |
-| C4 | Bloc « Activité récente » : 10 derniers événements visibles | Commercial A | ☐ | |
-| C5 | Bloc « Usage IA » : appels aujourd'hui ≥ 4, coût 7 j non nul, taux fallback cohérent avec présence/absence `OPENROUTER_API_KEY` | Commercial A | ☐ | |
-| C6 | Bloc « Budget IA mensuel » : status `ok`/`warning`, 3 KPIs renseignés, barre progression visible | Commercial A | ☐ | |
+| C1 | Bloc « Vue synthèse » : tous les KPIs cohérents avec le scénario | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| C2 | Bloc « Actions prioritaires » : pas de `validate_support_quality` ni `complete_post_training_review` pour la session A après étapes 17 et 21 | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| C3 | Bloc « Pipeline formation » : session A listée avec étape `delivered` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| C4 | Bloc « Activité récente » : 10 derniers événements visibles | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| C5 | Bloc « Usage IA » : appels aujourd'hui ≥ 4, coût 7 j non nul, taux fallback cohérent avec présence/absence `OPENROUTER_API_KEY` | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| C6 | Bloc « Budget IA mensuel » : status `ok`/`warning`, 3 KPIs renseignés, barre progression visible | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
 
 **Vérifications v1.0b** (nouvelles capacités poussées 2026-07-07 —
 ces 3 lignes n'existent pas dans §4.2/§4.3 historiques)
 
 | # | Étape | Compte utilisé | Verdict | Note |
 |---|---|---|---|---|
-| v1.0b-1 | Après complétion du diagnostic (étape 4), `diagnostics.ratios_snapshot` et `alerts_snapshot` sont **non-null** sur la ligne concernée — preuve que `refreshDiagnosticSnapshots` écrit bien best-effort via le client route handler cookie (jamais service_role). Requête SQL à coller dans le dashboard : <br>`select id, status, ratios_snapshot is not null as has_ratios, alerts_snapshot is not null as has_alerts, jsonb_array_length(coalesce(alerts_snapshot->'alerts','[]'::jsonb)) as alerts_count from public.diagnostics where created_by = (select id from public.profiles where email = 'commerciala@start-academy.test') order by created_at desc limit 1;` <br>Attendu : `has_ratios = true`, `has_alerts = true`, `alerts_count ≥ 0`. | Commercial A + SQL admin | ☐ | |
-| v1.0b-2 | Pendant la saisie du diagnostic (étape 3), les 2 synthèses intermédiaires s'affichent au bon moment : **« Potentiel de financement »** après la dernière question du Chapitre 2 (bloc budget mobilisable + taux de consommation `environ X %` + alertes financement) et **« Pipeline de transformation »** après la dernière question du Chapitre 8 (funnel 5 étapes vs benchmarks + 2 étapes les plus faibles surlignées). Boutons `Passer` et `Continuer` disponibles — jamais bloquants. | Commercial A | ☐ | vérif UI purement visuelle |
-| v1.0b-3 | La recommandation IA générée à l'étape 5 cite **au moins un ratio en alerte** dans ses `performanceIssues` ou son `commercialExplanation` — preuve que les 3 blocs autoritaires (ratios / alertes / financement) sont consommés par le LLM (règles 12-14 du SYSTEM_PROMPT). Croiser avec le contenu de `alerts_snapshot` (v1.0b-1). Si l'IA a acknowledgé des alertes, `alertsAcknowledged` non-vide dans la réponse. | Commercial A | ☐ | fallback heuristique local si `OPENROUTER_API_KEY` KO → alertes non consommées, marquer ⚠️ + noter fallback |
+| v1.0b-1 | Après complétion du diagnostic (étape 4), `diagnostics.ratios_snapshot` et `alerts_snapshot` sont **non-null** sur la ligne concernée — preuve que `refreshDiagnosticSnapshots` écrit bien best-effort via le client route handler cookie (jamais service_role). Requête SQL à coller dans le dashboard : <br>`select id, status, ratios_snapshot is not null as has_ratios, alerts_snapshot is not null as has_alerts, jsonb_array_length(coalesce(alerts_snapshot->'alerts','[]'::jsonb)) as alerts_count from public.diagnostics where created_by = (select id from public.profiles where email = 'commerciala@start-academy.test') order by created_at desc limit 1;` <br>Attendu : `has_ratios = true`, `has_alerts = true`, `alerts_count ≥ 0`. | Commercial A + SQL admin | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent |
+| v1.0b-2 | Pendant la saisie du diagnostic (étape 3), les 2 synthèses intermédiaires s'affichent au bon moment : **« Potentiel de financement »** après la dernière question du Chapitre 2 (bloc budget mobilisable + taux de consommation `environ X %` + alertes financement) et **« Pipeline de transformation »** après la dernière question du Chapitre 8 (funnel 5 étapes vs benchmarks + 2 étapes les plus faibles surlignées). Boutons `Passer` et `Continuer` disponibles — jamais bloquants. | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent (les 2 synthèses affichées + non-bloquantes) |
+| v1.0b-3 | La recommandation IA générée à l'étape 5 cite **au moins un ratio en alerte** dans ses `performanceIssues` ou son `commercialExplanation` — preuve que les 3 blocs autoritaires (ratios / alertes / financement) sont consommés par le LLM (règles 12-14 du SYSTEM_PROMPT). Croiser avec le contenu de `alerts_snapshot` (v1.0b-1). Si l'IA a acknowledgé des alertes, `alertsAcknowledged` non-vide dans la réponse. | Commercial A | ✅ | 2026-07-08 — rejoué post-PR #6, confirmé par Laurent (LLM opérationnel — cas fallback heuristique reste à revalider si `OPENROUTER_API_KEY` bascule) |
 
 **Acceptance §13.1.1** : 31 lignes en `✅`. Toute ligne en `❌` ou
 `⚠️` génère un ticket §11.2 dans **Tickets ouverts** ci-dessus, avec
 description + owner + deadline.
+
+### 13.1.2 Registre de smoke §5 — sécurité
+
+Répartition d'exécution : le script `scripts/security-smoke.ts`
+couvre les 26 tests d'API / PostgREST / storage / grep automatisables ;
+les 7 restants (contrôles visuels HTML, checks SQL brut sur
+`pg_policies` déjà validés au clôturé push v1.0b 2026-07-07) restent
+à faire côté dashboard / navigateur par Laurent.
+
+Le script s'exécute avec `npm run smoke:security` (à ajouter) ou
+directement `npx tsx scripts/security-smoke.ts`. Les identifiants
+Commercial B + client_viewer + IDs des ressources de A sont passés
+par variables d'env, **jamais commités** — le script vérifie leur
+présence et refuse de démarrer si l'une manque.
+
+**§5.1 Auth**
+
+| # | Test | Attendu | Exécution | Verdict | Note |
+|---|---|---|---|---|---|
+| 5.1.1 | Navigateur anon → `/cockpit` | Redirection login | Script (curl `-I`, check 302 / Location) | ☐ | |
+| 5.1.2 | Navigateur anon → `/diagnostics` | Redirection login | Script | ☐ | |
+| 5.1.3 | Navigateur anon → `/api/diagnostics` | 401 `{ code: "unauthenticated" }` | Script | ☐ | |
+| 5.1.4 | Login `client_viewer` → `/cockpit` | 403 (rôle insuffisant) | Script (nécessite compte client_viewer préalable) | ☐ | Laurent crée le compte avant de lancer le script |
+
+**§5.2 Cross-commercial (Commercial B sur ressources A)**
+
+Le script obtient un JWT Commercial B via `POST /auth/v1/token`, puis
+enchaîne les 18 tests avec ce token comme `Authorization: Bearer`.
+Aucune écriture, seulement des tentatives d'accès qui **doivent** être
+refusées.
+
+| # | Test | Attendu | Exécution | Verdict | Note |
+|---|---|---|---|---|---|
+| 5.2.1 | B : `/sessions` | Aucune session de A visible | Script (PostgREST `training_sessions?select=id` avec JWT B → 0 ligne A) | ☐ | |
+| 5.2.2 | B : `/diagnostics` | Aucun diagnostic de A visible | Script (idem sur `diagnostics`) | ☐ | |
+| 5.2.3 | B : GET `/api/sessions/<sessionA>/documents` | 403 | Script | ☐ | |
+| 5.2.4 | B : POST `/api/generate-training-support { sessionId: <sessionA> }` | 403, aucun OpenRouter | Script + double-check `ai_generation_logs` count | ☐ | |
+| 5.2.5 | B : POST `/api/design-training-support` | 403 idem | Script | ☐ | |
+| 5.2.6 | B : POST `/api/sessions/<sessionA>/create-access-link` | 403 | Script | ☐ | |
+| 5.2.7 | B : GET `/api/sessions/<sessionA>/date-options` | 403 | Script | ☐ | |
+| 5.2.8 | B : POST `/api/sessions/<sessionA>/date-options` | 403 | Script | ☐ | |
+| 5.2.9 | B : DELETE `/api/sessions/<sessionA>/date-options/<optionId>` | 403 | Script (nécessite un optionId de A en env — sinon marque n/a) | ☐ | |
+| 5.2.10 | B : GET `/api/sessions/<sessionA>/activity` | 403 | Script | ☐ | |
+| 5.2.11 | B : POST `/api/activity/log { sessionId: <sessionA> }` | 403 | Script | ☐ | |
+| 5.2.12 | B : POST `/api/analyze-training-need { diagnosticId: <diagA> }` | 403, aucun OpenRouter | Script | ☐ | |
+| 5.2.13 | B : POST `/api/generate-training-proposal { diagnosticId: <diagA> }` | 403, aucun OpenRouter | Script | ☐ | |
+| 5.2.14 | B : GET `/api/diagnostics/<diagA>/summary` | 200 ? À confirmer | Script (rapport le status obtenu — 200 = finding à ouvrir) | ☐ | historiquement suspect, cf. §11.2 |
+| 5.2.15 | B : GET `/api/sessions/<sessionA>/post-training-review` | 403 | Script | ☐ | |
+| 5.2.16 | B : PUT `/api/sessions/<sessionA>/post-training-review` | 403 | Script | ☐ | |
+| 5.2.17 | B : GET `/api/sessions/<sessionA>/support-quality` | 403 | Script | ☐ | |
+| 5.2.18 | B : PUT `/api/sessions/<sessionA>/support-quality` | 403 | Script | ☐ | |
+
+**§5.3 Tokens publics**
+
+| # | Test | Attendu | Exécution | Verdict | Note |
+|---|---|---|---|---|---|
+| 5.3.1 | GET `/public/session/<token_invalide>` | Page erreur propre | Script (GET, check body OU `X-Robots-Tag` etc. — rapporte statut + fragment de réponse) | ☐ | |
+| 5.3.2 | GET `/public/session/<token_expiré>` | Page erreur propre | Script (nécessite un token expiré en env — sinon Laurent en crée un avec expiry passé) | ☐ | |
+| 5.3.3 | GET `/public/session/<token_désactivé>` | Page erreur propre | Script (nécessite un token `is_active=false` en env) | ☐ | |
+| 5.3.4 | POST `/api/public/validate-token { token: <fake> }` | `{ valid: false, reason: ... }` | Script | ☐ | |
+| 5.3.5 | Inspection HTML de `/public/session/<valid_token>` : aucun `token_hash` ni URL Storage brute | UI Laurent (grep manuel sur la page rendue, ou DevTools Network) | ☐ | |
+
+**§5.4 Storage**
+
+| # | Test | Attendu | Exécution | Verdict | Note |
+|---|---|---|---|---|---|
+| 5.4.1 | curl direct `/storage/v1/object/session-documents/<path>` sans auth | 400/401 | Script (nécessite un `path` réel en env — sinon utilise le premier objet listé par service_role au démarrage) | ☐ | |
+| 5.4.2 | Inspection HTML fiche session interne : `storage_path` jamais visible | UI Laurent (DevTools view source sur `/sessions/[id]`) | ☐ | |
+| 5.4.3 | Signed URL générée par `/api/sessions/<id>/documents` expire ≤ 60 s | Script (extrait `downloadUrl` de la réponse, GET après 65s → 401) | ☐ | timing test — durée totale ≥ 70s |
+
+**§5.5 RLS / policies anon**
+
+| # | Test | Attendu | Exécution | Verdict | Note |
+|---|---|---|---|---|---|
+| 5.5.1 | `grep -rn "to anon" supabase/migrations/` | 0 occurrence en policy active | Script (spawn grep local) | ☐ | |
+| 5.5.2 | `select polname from pg_policies where polroles::text like '%anon%';` | 0 ligne | UI Laurent (SQL Editor dashboard) — déjà validé 2026-07-07 lors du clôturé push v1.0b, à revérifier post-migration 20260708 | ☐ | |
+| 5.5.3 | curl anon PostgREST sur table durcie (`/rest/v1/training_sessions?apikey=<ANON>`) | `[]` (RLS bloque) | Script | ☐ | |
+
+**Acceptance §13.1.2** : 33 lignes en `✅` (26 script + 7 UI-Laurent
++ SQL brut). Le § 10 acceptance item 2 est cochable dès validation.
+Toute ligne en `❌` ou `⚠️` génère un ticket §11.2. Si 5.2.14 retourne
+200, ticket ouvert immédiatement — c'est le finding historique
+mentionné dans le doc.
 
 ---
 

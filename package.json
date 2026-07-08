@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "smoke:security": "node scripts/security-smoke.mjs",
     "generate:catalog": "python3 scripts/generate-module-catalog/generate_catalog.py",
     "check:catalog": "node scripts/check-catalog-seed.mjs"
   },

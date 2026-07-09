@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
-import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { createSupabaseRouteHandlerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -13,9 +13,14 @@ export const runtime = "nodejs";
  * tête, avec client joint et nombre de réponses. Réservé aux rôles
  * internes.
  *
- * Lecture en service_role pour rester compatible avec le durcissement
- * RLS Phase 2B à venir (la policy SELECT future sera basée sur
- * `created_by = auth.uid()` — l'API serveur reste libre d'agréger).
+ * **T-9 fix (2026-07-09)** — passage au client route-handler
+ * cookie-SSR, RLS-aware. La policy `diagnostics_owner_or_admin_select`
+ * (Phase 2B) filtre nativement au `created_by = auth.uid() OR
+ * is_admin()`. Avant ce fix, la lecture se faisait en service_role,
+ * bypassant RLS → tout commercial interne voyait TOUS les diagnostics
+ * (fuite PII dirigeant + notes internes + BI). Le commentaire
+ * historique « l'API serveur reste libre d'agréger » datait d'avant
+ * le durcissement Phase 2B et n'a pas été rectifié à ce moment-là.
  */
 export async function GET(request: Request) {
   const auth = await requireApiRole(INTERNAL_APP_ROLES);
@@ -29,7 +34,7 @@ export async function GET(request: Request) {
     return Math.min(parsed, 500);
   })();
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = await createSupabaseRouteHandlerClient();
   if (!supabase) {
     return NextResponse.json(
       {

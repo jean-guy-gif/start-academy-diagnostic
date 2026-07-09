@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
+import { assertCanAccessDiagnostic } from "@/lib/auth/assert-diagnostic-access";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -14,8 +15,16 @@ interface RouteContext {
  * GET /api/diagnostics/[id]/summary
  *
  * Renvoie le diagnostic + le client + les réponses + des stats
- * (count answered/skipped/weak signals). Réservé aux rôles internes.
- * Renvoie 404 si le diagnostic n'existe pas.
+ * (count answered/skipped/weak signals). Réservé aux rôles internes,
+ * cloisonné à l'owner (Phase 2B) via `assertCanAccessDiagnostic`.
+ * Renvoie 404 si le diagnostic n'existe pas, 403 si l'appelant n'est
+ * pas propriétaire.
+ *
+ * **T-9 fix (2026-07-09)** — avant : rôle seul → tout commercial
+ * lisait tout dossier (PII dirigeant, notes internes ligne à ligne,
+ * évaluations qualitatives, business intelligence brute). Le smoke
+ * §5.2.14 a remonté le comportement, l'audit d'accès a confirmé le
+ * finding sécurité.
  */
 export async function GET(_request: Request, context: RouteContext) {
   const auth = await requireApiRole(INTERNAL_APP_ROLES);
@@ -28,6 +37,9 @@ export async function GET(_request: Request, context: RouteContext) {
       { status: 400 }
     );
   }
+
+  const access = await assertCanAccessDiagnostic(auth.profile, diagnosticId);
+  if (!access.ok) return access.response;
 
   const supabase = createSupabaseAdminClient();
   if (!supabase) {

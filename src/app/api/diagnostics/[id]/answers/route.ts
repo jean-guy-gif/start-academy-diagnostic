@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
+import { assertCanAccessDiagnostic } from "@/lib/auth/assert-diagnostic-access";
 import { refreshDiagnosticSnapshots } from "@/lib/diagnostics/refresh-snapshots";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { ANSWER_CATEGORIES } from "@/types";
@@ -48,6 +49,12 @@ export async function POST(request: Request, context: RouteContext) {
       { status: 400 }
     );
   }
+
+  // T-9 fix (2026-07-09) — cloisonnement écriture. Avant : rôle seul,
+  // tout commercial pouvait insérer une réponse sur le diagnostic d'un
+  // collègue (bypass RLS via service_role).
+  const access = await assertCanAccessDiagnostic(auth.profile, diagnosticId);
+  if (!access.ok) return access.response;
 
   let body: unknown;
   try {

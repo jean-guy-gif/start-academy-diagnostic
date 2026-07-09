@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
+import { assertCanAccessDiagnostic } from "@/lib/auth/assert-diagnostic-access";
 import { refreshDiagnosticSnapshots } from "@/lib/diagnostics/refresh-snapshots";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { createActivityLog } from "@/lib/activity/activity-log-service";
@@ -42,6 +43,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       { status: 400 }
     );
   }
+
+  // T-9 fix (2026-07-09) — cloisonnement changement de statut. Avant :
+  // rôle seul, tout commercial pouvait basculer un diagnostic tiers en
+  // `to_review`/`validated` (impacts cockpit + trigger recommandation).
+  const access = await assertCanAccessDiagnostic(auth.profile, diagnosticId);
+  if (!access.ok) return access.response;
 
   let body: unknown;
   try {

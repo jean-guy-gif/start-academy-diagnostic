@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { assertCanAccessDiagnostic } from "@/lib/auth/assert-diagnostic-access";
 import { getCurrentProfile } from "@/lib/auth/get-current-user";
 import { hasRole, INTERNAL_APP_ROLES } from "@/lib/auth/roles";
 import {
@@ -65,6 +66,11 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const { id: diagnosticId } = await context.params;
+  // T-9 fix (2026-07-09) — cloisonnement lecture participants. Fuite
+  // potentielle (nom + statut pro + CA N-1 + éligibilité OPCO / AGEFICE
+  // par participant nominatif — cf. Ch.2.2/2.3 du référentiel v1.0).
+  const access = await assertCanAccessDiagnostic(profile, diagnosticId);
+  if (!access.ok) return access.response;
   const participants = await listDiagnosticParticipants(diagnosticId);
   return NextResponse.json({ participants });
 }
@@ -82,6 +88,12 @@ export async function PUT(request: Request, context: RouteContext) {
   }
 
   const { id: diagnosticId } = await context.params;
+  // T-9 fix (2026-07-09) — cloisonnement écriture participants. Avant :
+  // rôle seul, un commercial pouvait remplacer la liste des
+  // participants prévisionnels d'un diagnostic tiers (impact direct sur
+  // l'estimation funding et la génération de proposition).
+  const access = await assertCanAccessDiagnostic(profile, diagnosticId);
+  if (!access.ok) return access.response;
 
   let body: unknown;
   try {

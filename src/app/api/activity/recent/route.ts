@@ -10,22 +10,30 @@ export const runtime = "nodejs";
  * GET /api/activity/recent — top N événements toutes sessions
  * confondues. Utilisé par le cockpit.
  *
- * **Posture cockpit partagée (décision 2026-07-09)** : l'activité
- * inter-commerciale est volontairement visible à tout rôle interne.
- * Le cockpit est l'outil de pilotage de Start Academy, l'entraide et
- * la reprise de dossier passent par cette visibilité. On NE filtre
- * PAS par `actor_id`. Contrairement à `/api/diagnostics` (T-9), il ne
- * s'agit pas d'un oubli — c'est le contrat produit.
+ * **Règle définitive (T-10c-BIS clos 2026-07-09)** :
+ *   cockpit partagé sur les **métadonnées d'événement**, jamais sur
+ *   le contenu libre.
  *
- * Réserve tracée — T-10c-BIS (2026-07-09) : la table `activity_logs`
- * contient un champ `event_description` (texte libre 500 chars)
- * alimenté par `POST /api/activity/log` sur les événements
- * `note_added` (cf. `session-activity-journal.tsx:165`). Ce champ
- * PEUT contenir des notes internes sensibles — la posture « cockpit
- * partagé » et son passage inchangé dans `activity/recent` remontent
- * donc ces notes cross-commercial. Décision à trancher : filtrer
- * `event_description` côté route, restreindre le type `note_added` à
- * sa propre session, ou accepter la fuite. Voir §11.2 registre.
+ * Concrètement :
+ *   • `event_type`, `event_label` (whitelist par `buildActivityLabel`),
+ *     `actor_name`, `actor_role`, timestamps, `session_id` /
+ *     `diagnostic_id` / `client_id`, `metadata` (chiffres et enums) →
+ *     **exposés à tout rôle interne**. L'entraide et la reprise de
+ *     dossier passent par cette visibilité.
+ *   • `event_description` (texte libre 500 chars, alimenté par
+ *     `note_added` — notes internes commerciales) → **JAMAIS remonté**.
+ *     Le SELECT dans `listRecentActivity` (activity-log-service.ts) le
+ *     supprime explicitement et le mapping force `eventDescription:
+ *     null`. Un test unitaire dédié verrouille l'invariant.
+ *
+ * Le journal détaillé d'une session (`/api/sessions/[id]/activity`)
+ * expose `event_description` comme avant — il est protégé par
+ * `assertCanAccessSession` donc seul qui a accès à la session voit
+ * les notes.
+ *
+ * NB : le composant cockpit `RecentActivityRow` n'affichait jamais
+ * `eventDescription` — le champ transitait silencieusement dans le
+ * payload avant ce fix, exploitable via DevTools Network ou curl.
  */
 export async function GET(request: Request) {
   const auth = await requireApiRole(INTERNAL_APP_ROLES);

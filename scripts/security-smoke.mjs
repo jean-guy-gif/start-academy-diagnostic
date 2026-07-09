@@ -44,9 +44,9 @@
  *   • Sortie non-nulle si au moins 1 test en ❌ (utilisable en CI).
  */
 
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import fs from "node:fs";
 
 // ─────────────────────────────────────────────────────────────────
 // Config + validation env
@@ -119,8 +119,42 @@ async function login(email, password) {
       `Login échoué pour ${email} : HTTP ${res.status} — ${body.slice(0, 200)}`
     );
   }
-  const data = await res.json();
-  return data.access_token;
+  // La réponse contient toute la session : access_token, refresh_token,
+  // token_type, expires_in, expires_at, user. On la garde entière pour
+  // pouvoir construire le cookie @supabase/ssr côté Next.js.
+  return await res.json();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Cookies @supabase/ssr — les routes Next.js lisent l'identité via
+// `createServerClient` de @supabase/ssr, PAS via un header Bearer.
+// Le cookie posé côté browser s'appelle `sb-<projectRef>-auth-token`
+// et vaut `base64-<base64(JSON.stringify(session))>`. Si le payload
+// dépasse ~3180 bytes, @supabase/ssr chunke en `.0`, `.1`, etc.
+// Le smoke reproduit ce format à partir de la session retournée par
+// `POST /auth/v1/token?grant_type=password`.
+// ─────────────────────────────────────────────────────────────────
+
+const PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
+const COOKIE_NAME_BASE = `sb-${PROJECT_REF}-auth-token`;
+const COOKIE_CHUNK_MAX = 3180;
+
+function sessionToCookies(session) {
+  const raw =
+    "base64-" +
+    Buffer.from(JSON.stringify(session), "utf8").toString("base64");
+  if (raw.length <= COOKIE_CHUNK_MAX) {
+    return [`${COOKIE_NAME_BASE}=${raw}`];
+  }
+  const parts = [];
+  for (let i = 0, idx = 0; i < raw.length; i += COOKIE_CHUNK_MAX, idx++) {
+    parts.push(`${COOKIE_NAME_BASE}.${idx}=${raw.slice(i, i + COOKIE_CHUNK_MAX)}`);
+  }
+  return parts;
+}
+
+function cookieHeader(session) {
+  return sessionToCookies(session).join("; ");
 }
 
 /**
@@ -191,18 +225,22 @@ async function testHttp({
 // Auth commune
 // ─────────────────────────────────────────────────────────────────
 
-let JWT_B;
+/** @type {any} */
+let SESSION_B;
 try {
-  JWT_B = await login(B_EMAIL, B_PASSWORD);
+  SESSION_B = await login(B_EMAIL, B_PASSWORD);
 } catch (err) {
   console.error("❌ Login Commercial B impossible :", err.message);
   process.exit(2);
 }
+const JWT_B = SESSION_B.access_token;
+const COOKIE_B = cookieHeader(SESSION_B);
 
-let JWT_VIEWER = null;
+/** @type {any} */
+let SESSION_VIEWER = null;
 if (CLIENT_VIEWER_EMAIL && CLIENT_VIEWER_PASSWORD) {
   try {
-    JWT_VIEWER = await login(CLIENT_VIEWER_EMAIL, CLIENT_VIEWER_PASSWORD);
+    SESSION_VIEWER = await login(CLIENT_VIEWER_EMAIL, CLIENT_VIEWER_PASSWORD);
   } catch (err) {
     console.error(
       "⚠️  Login client_viewer échoué (5.1.4 sera skippé) :",
@@ -210,7 +248,10 @@ if (CLIENT_VIEWER_EMAIL && CLIENT_VIEWER_PASSWORD) {
     );
   }
 }
+const COOKIE_VIEWER = SESSION_VIEWER ? cookieHeader(SESSION_VIEWER) : null;
 
+// Header pour PostgREST direct (5.2.1, 5.2.2, 5.5.3) — le bon canal
+// d'auth pour /rest/v1/ est bien Bearer + apikey, PAS le cookie ssr.
 const B_AUTH = { Authorization: `Bearer ${JWT_B}`, apikey: ANON_KEY };
 
 // ─────────────────────────────────────────────────────────────────
@@ -244,14 +285,16 @@ await testHttp({
   expectedText: "unauthenticated",
 });
 
-if (JWT_VIEWER) {
+if (COOKIE_VIEWER) {
   // Si le status est une redirection, on vérifie manuellement que
   // Location pointe vers une page « refus » (/login, /forbidden) et
   // pas vers une page interne — sinon c'est un finding sécurité.
+  // Cookie @supabase/ssr utilisé — pas de header Bearer (Next.js SSR
+  // lit exclusivement le cookie côté createServerClient).
   try {
     const res = await fetch(`${APP_URL}/cockpit`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${JWT_VIEWER}` },
+      headers: { Cookie: COOKIE_VIEWER },
       redirect: "manual",
     });
     const status = res.status;
@@ -361,12 +404,19 @@ if (JWT_VIEWER) {
 }
 
 async function api403(id, description, method, path, body = null) {
+  // Cookie SSR au lieu de Bearer : les routes Next.js utilisent
+  // createServerClient (@supabase/ssr) qui reconnaît l'utilisateur via
+  // le cookie sb-<projectRef>-auth-token, jamais via un header
+  // Authorization. Avec un Bearer seul, elles voient l'appelant
+  // comme anonyme et renvoient 401 unauthenticated → verdict ❌ faux
+  // positif. C'est ce qu'a montré la 1re passe de Laurent (17 ❌
+  // dont 15 par ce mécanisme).
   await testHttp({
     id,
     description,
     method,
     url: `${APP_URL}${path}`,
-    headers: { Authorization: `Bearer ${JWT_B}` },
+    headers: { Cookie: COOKIE_B },
     body,
     expectedStatuses: [403],
     expectedText: "forbidden",
@@ -455,9 +505,10 @@ await api403(
 );
 
 // 5.2.14 : historiquement suspect — on rapporte le status quel qu'il soit.
+// Cookie SSR (pas Bearer) pour que Next.js reconnaisse bien B.
 {
   const url = `${APP_URL}/api/diagnostics/${DIAG_A_ID}/summary`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${JWT_B}` } });
+  const res = await fetch(url, { headers: { Cookie: COOKIE_B } });
   const body = (await res.text()).slice(0, 240);
   const verdict = res.status === 403 ? "✅" : "❌";
   const prefix = res.status === 200 ? "FINDING SÉCURITÉ : " : "";
@@ -508,13 +559,20 @@ await api403(
 //   • expired               → "Ce lien a expiré."
 //   • disabled              → "Ce lien a été désactivé par Start Academy."
 // Titre commun toutes variantes : "Accès impossible".
+// Le token "invalide-de-toutes-facons" (23 chars) passe la check de
+// longueur (≥ 16 dans validatePublicToken) puis n'est pas trouvé en
+// DB → reason "not_found" → message rendu spécifique
+// "Lien introuvable ou révoqué." (cf. REASON_LABEL dans
+// src/app/public/_components/public-token-error.tsx). Marqueur
+// robuste : "introuvable" (mot distinctif du case not_found, sûr
+// contre variations typographiques d'apostrophes / tirets).
 await testHttp({
   id: "5.3.1",
   description: "GET /public/session/<token_invalide>",
   method: "GET",
   url: `${APP_URL}/public/session/invalide-de-toutes-facons`,
   expectedStatuses: [200, 404, 410, 400],
-  expectedText: "Accès impossible",
+  expectedText: "introuvable",
 });
 
 if (PUBLIC_TOKEN_EXPIRED) {
@@ -602,31 +660,61 @@ skip(
 // §5.5 RLS / policies anon
 // ─────────────────────────────────────────────────────────────────
 
-// 5.5.1 : grep local sur migrations.
-await new Promise((resolve) => {
+// 5.5.1 : scan Node local sur migrations. Un simple `grep "to anon"`
+// matche aussi les commentaires SQL (`-- Pas de policy to anon...`) —
+// c'est ce qu'a montré la 1re passe. On lit les fichiers ligne par
+// ligne, on ignore les lignes commentées, et on ne retient que les
+// vraies clauses de policy contenant `to anon`.
+//
+// Heuristique retenue :
+//   • Ignorer les lignes dont le PREMIER caractère non-blanc est `--`.
+//   • Sur les autres lignes, matcher \bto anon\b (mot entier).
+//   • Rapporter les matches (fichier:ligne + extrait).
+{
   const __filename = fileURLToPath(import.meta.url);
   const repoRoot = path.resolve(path.dirname(__filename), "..");
-  const migrationsPath = path.join(repoRoot, "supabase", "migrations");
-  const child = spawn("grep", ["-rn", "to anon", migrationsPath], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let out = "";
-  child.stdout.on("data", (d) => (out += d.toString()));
-  child.on("close", (code) => {
-    // grep exit 0 = matches found (BAD) ; exit 1 = no matches (GOOD)
-    const verdict = code === 1 ? "✅" : "❌";
+  const migrationsDir = path.join(repoRoot, "supabase", "migrations");
+  const commentRe = /^\s*--/;
+  const anonRe = /\bto\s+anon\b/;
+  const matches = [];
+  try {
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    for (const f of files) {
+      const abs = path.join(migrationsDir, f);
+      const lines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (commentRe.test(line)) continue;
+        if (anonRe.test(line)) {
+          matches.push(`${f}:${i + 1}: ${line.trim().slice(0, 120)}`);
+        }
+      }
+    }
+    const verdict = matches.length === 0 ? "✅" : "❌";
     const obtained =
-      code === 1 ? "0 occurrence" : `matches: ${out.slice(0, 200)}`;
+      matches.length === 0
+        ? "0 clause `to anon` en policy active (commentaires exclus)"
+        : `${matches.length} match(es) : ${matches.slice(0, 3).join(" | ")}`;
     record(
       "5.5.1",
-      'grep -rn "to anon" supabase/migrations/',
+      "scan migrations : clause `to anon` en policy active (hors commentaires)",
       "0 occurrence",
       obtained,
       verdict
     );
-    resolve();
-  });
-});
+  } catch (err) {
+    record(
+      "5.5.1",
+      "scan migrations : clause `to anon` en policy active",
+      "0 occurrence",
+      `exception: ${err.message}`,
+      "❌"
+    );
+  }
+}
 
 skip(
   "5.5.2",

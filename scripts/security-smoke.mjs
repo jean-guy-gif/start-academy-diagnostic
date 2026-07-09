@@ -189,7 +189,11 @@ async function testHttp({
     let bodyText = "";
     if (!redirectExpected) {
       try {
-        bodyText = (await res.text()).slice(0, 240);
+        // Fenêtre de capture élargie à 2 000 chars (fix 5.3.1 —
+        // avant, la troncature à 240 chars tombait pile avant que le
+        // message « introuvable » n'apparaisse dans le HTML rendu par
+        // le composant PublicTokenError).
+        bodyText = (await res.text()).slice(0, 2000);
       } catch {
         bodyText = "";
       }
@@ -547,6 +551,86 @@ await api403(
   "PUT",
   `/api/sessions/${SESSION_A_ID}/support-quality`,
   { status: "validated" }
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Extension T-9 (2026-07-09) — écritures diagnostics cross-commercial
+// Ces 4 tests couvrent les routes /api/diagnostics/[id]/* qui étaient
+// invisibles au smoke initial (seul 5.2.14 summary était testé). Après
+// le fix T-9 elles doivent renvoyer 403 comme les autres.
+// ─────────────────────────────────────────────────────────────────
+
+// 5.2.19-bis : GET /api/diagnostics (racine, route Next.js).
+// Avant T-9 #1 : service_role → B voyait tous les diagnostics
+// (5.2.2 testait le canal PostgREST direct qui, lui, était bien
+// filtré par RLS — cette route API bypassait). Après fix : bascule
+// sur createSupabaseRouteHandlerClient → RLS applique → items ne
+// contient PAS le diagnostic de A.
+{
+  const url = `${APP_URL}/api/diagnostics`;
+  const res = await fetch(url, { headers: { Cookie: COOKIE_B } });
+  const body = (await res.text()).slice(0, 2000);
+  let verdict = "❌";
+  let obtained = `HTTP ${res.status} · body: ${body.replace(/\s+/g, " ").slice(0, 200)}`;
+  if (res.ok) {
+    try {
+      const json = JSON.parse(body);
+      const items = Array.isArray(json.items) ? json.items : [];
+      const containsA = items.some(
+        (item) =>
+          (item && item.diagnostic && item.diagnostic.id === DIAG_A_ID) ||
+          (item && item.id === DIAG_A_ID)
+      );
+      if (!containsA) {
+        verdict = "✅";
+        obtained = `HTTP 200 · ${items.length} item(s), diagnostic A absent`;
+      } else {
+        verdict = "❌";
+        obtained = `FINDING SÉCURITÉ : HTTP 200 · diagnostic A visible dans la liste`;
+      }
+    } catch {
+      /* keep ❌ */
+    }
+  }
+  record(
+    "5.2.19",
+    "GET /api/diagnostics (route racine) avec cookie B (T-9 #1)",
+    "HTTP 200 + diagnostic A absent des items",
+    obtained,
+    verdict
+  );
+}
+
+await api403(
+  "5.2.20",
+  "POST answers diagnostic A (T-9 #3)",
+  "POST",
+  `/api/diagnostics/${DIAG_A_ID}/answers`,
+  {
+    questionId: "smoke-q",
+    questionText: "Question smoke",
+    answer: "n/a",
+  }
+);
+await api403(
+  "5.2.21",
+  "PATCH status diagnostic A (T-9 #4)",
+  "PATCH",
+  `/api/diagnostics/${DIAG_A_ID}/status`,
+  { status: "to_review" }
+);
+await api403(
+  "5.2.22",
+  "GET participants diagnostic A (T-9 #5 read)",
+  "GET",
+  `/api/diagnostics/${DIAG_A_ID}/participants`
+);
+await api403(
+  "5.2.23",
+  "PUT participants diagnostic A (T-9 #5 write)",
+  "PUT",
+  `/api/diagnostics/${DIAG_A_ID}/participants`,
+  { participants: [] }
 );
 
 // ─────────────────────────────────────────────────────────────────

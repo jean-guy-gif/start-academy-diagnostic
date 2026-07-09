@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
+import { assertCanAccessClient } from "@/lib/auth/assert-client-access";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { createActivityLog } from "@/lib/activity/activity-log-service";
 
@@ -60,6 +61,16 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+
+  // T-10a fix (2026-07-09) — cloisonnement création diagnostic. Sans
+  // cette assertion, un commercial pouvait fournir le `clientId` d'un
+  // collègue et créer un diagnostic parasite sur le client d'autrui
+  // (pollution cockpit + rapports, pas de fuite lecture).
+  const clientAccess = await assertCanAccessClient(
+    auth.profile,
+    parsed.data.clientId
+  );
+  if (!clientAccess.ok) return clientAccess.response;
 
   const supabase = createSupabaseAdminClient();
   if (!supabase) {

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { assertCanAccessSession } from "@/lib/auth/assert-session-access";
 import { getCurrentProfile } from "@/lib/auth/get-current-user";
 import { hasRole, INTERNAL_APP_ROLES } from "@/lib/auth/roles";
+import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import {
   createGmailDraft,
   isGmailDraftAvailable,
@@ -68,6 +70,49 @@ export async function POST(request: Request) {
       },
       { status: 400 }
     );
+  }
+
+  // 2bis. T-10b fix (2026-07-09) — cloisonnement contextuel. Si le
+  //    payload rattache le draft à une session (directement ou via un
+  //    accessLinkId), l'appelant doit être owner de cette session.
+  //    Sinon un commercial pouvait construire un draft Gmail attaché
+  //    contextuellement à la session d'un collègue (pas de fuite
+  //    lecture des données de la session, mais création d'un canal
+  //    de comm au nom d'un autre commercial ; incohérence de posture).
+  //    Un draft SANS aucun ID reste autorisé (usage libre).
+  let sessionIdToCheck: string | null = parsed.data.sessionId ?? null;
+  if (!sessionIdToCheck && parsed.data.accessLinkId) {
+    const supabase = createSupabaseAdminClient();
+    if (!supabase) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "service_unavailable",
+          message: "Persistance Supabase indisponible.",
+        },
+        { status: 503 }
+      );
+    }
+    const { data: linkRow } = await supabase
+      .from("public_access_tokens")
+      .select("session_id")
+      .eq("id", parsed.data.accessLinkId)
+      .maybeSingle();
+    if (!linkRow) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "not_found",
+          message: "Lien d'accès introuvable.",
+        },
+        { status: 404 }
+      );
+    }
+    sessionIdToCheck = linkRow.session_id;
+  }
+  if (sessionIdToCheck) {
+    const access = await assertCanAccessSession(profile, sessionIdToCheck);
+    if (!access.ok) return access.response;
   }
 
   // 3. Court-circuit si Gmail n'est pas configuré côté serveur. On

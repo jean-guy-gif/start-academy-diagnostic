@@ -212,6 +212,19 @@ export async function listActivityLogsByDiagnostic(
   }
 }
 
+/**
+ * Flux inter-commercial du cockpit — décision T-10c-BIS (2026-07-09) :
+ * on expose les **métadonnées d'événement** (type, acteur, horodatage,
+ * label whitelist) mais **jamais le contenu libre**. La colonne
+ * `event_description` (texte libre 500 chars, alimenté notamment par
+ * `note_added`) est expressément **exclue du SELECT** — elle contient
+ * des notes internes commerciales et n'a rien à faire dans un flux
+ * inter-commercial. Le journal détaillé d'une session
+ * (`/api/sessions/[id]/activity`, protégé par `assertCanAccessSession`)
+ * conserve `event_description` pour les seuls propriétaires. Pour tuer
+ * tout doute côté type, on force `eventDescription: null` post-mapping
+ * — pas de propagation d'`undefined`.
+ */
 export async function listRecentActivity(
   limit = 10
 ): Promise<ActivityLogRecord[]> {
@@ -220,13 +233,17 @@ export async function listRecentActivity(
   try {
     const { data, error } = await client
       .from("activity_logs")
+      // event_description volontairement retiré (cf. commentaire ci-dessus).
       .select(
-        "id, session_id, diagnostic_id, client_id, actor_id, actor_name, actor_role, event_type, event_label, event_description, entity_type, entity_id, severity, metadata, created_at"
+        "id, session_id, diagnostic_id, client_id, actor_id, actor_name, actor_role, event_type, event_label, entity_type, entity_id, severity, metadata, created_at"
       )
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error || !data) return [];
-    return (data as ActivityLogRow[]).map(rowToRecord);
+    return (data as Omit<ActivityLogRow, "event_description">[]).map((row) => ({
+      ...rowToRecord({ ...row, event_description: null }),
+      eventDescription: null,
+    }));
   } catch {
     return [];
   }

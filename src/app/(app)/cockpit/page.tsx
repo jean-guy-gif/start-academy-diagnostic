@@ -65,7 +65,7 @@ import {
 import { countSupportsAwaitingQualityReview } from "@/lib/training-support/support-quality-service";
 import { countSessionsAwaitingPostTrainingReview } from "@/lib/post-training/post-training-service";
 
-export const dynamic = "force-dynamic";
+// `dynamic = 'force-dynamic'` hérité du layout `(app)/layout.tsx`.
 
 export const metadata = {
   title: "Cockpit — Start Academy",

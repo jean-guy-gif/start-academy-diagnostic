@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { ProfileWithRole } from "@/lib/auth/roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { Json, TablesUpdate } from "@/lib/supabase/database.types";
 
@@ -234,15 +235,24 @@ export async function updatePostTrainingReview(
 /**
  * Compte les sessions `delivered` sans review courante en statut
  * `completed`. Utilisé pour le KPI cockpit.
+ *
+ * Cloisonnement (T-11, 2026-07-09) : rôle `admin` → compte global
+ * Start Academy. Autres internes → compte restreint aux sessions
+ * `created_by = profile.id`.
  */
-export async function countSessionsAwaitingPostTrainingReview(): Promise<number> {
+export async function countSessionsAwaitingPostTrainingReview(
+  profile: ProfileWithRole
+): Promise<number> {
   const client = createSupabaseAdminClient();
   if (!client) return 0;
+  const isAdmin = profile.role === "admin";
   try {
-    const { data: sessions, error: sessionsErr } = await client
+    let sessionsQuery = client
       .from("training_sessions")
       .select("id")
       .eq("status", "delivered");
+    if (!isAdmin) sessionsQuery = sessionsQuery.eq("created_by", profile.id);
+    const { data: sessions, error: sessionsErr } = await sessionsQuery;
     if (sessionsErr || !sessions) return 0;
     const sessionIds = (sessions as Array<{ id: string }>).map((r) => r.id);
     if (sessionIds.length === 0) return 0;

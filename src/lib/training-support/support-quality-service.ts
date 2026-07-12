@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { ProfileWithRole } from "@/lib/auth/roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import type { Json, TablesUpdate } from "@/lib/supabase/database.types";
 
@@ -190,15 +191,42 @@ export async function updateSupportQualityReview(
  * Renvoie le nombre de sessions ayant un support designé mais
  * aucune review `validated`. Utilisé pour le KPI cockpit
  * « Supports à valider ».
+ *
+ * Cloisonnement (T-11, 2026-07-09) : rôle `admin` → compte global
+ * Start Academy. Autres internes → compte restreint aux sessions
+ * `created_by = profile.id`.
  */
-export async function countSupportsAwaitingQualityReview(): Promise<number> {
+export async function countSupportsAwaitingQualityReview(
+  profile: ProfileWithRole
+): Promise<number> {
   const client = createSupabaseAdminClient();
   if (!client) return 0;
+  const isAdmin = profile.role === "admin";
   try {
-    // Étape 1 : sessions ayant un designed support.
-    const { data: designed, error: designedErr } = await client
+    // Étape 1 (non-admin) : restreindre aux sessions du profile.
+    let ownedSessionIds: Set<string> | null = null;
+    if (!isAdmin) {
+      const { data: ownedSess } = await client
+        .from("training_sessions")
+        .select("id")
+        .eq("created_by", profile.id);
+      ownedSessionIds = new Set(
+        ((ownedSess as { id: string }[] | null) ?? []).map((r) => r.id)
+      );
+      if (ownedSessionIds.size === 0) return 0;
+    }
+
+    // Étape 2 : sessions ayant un designed support.
+    let designedQuery = client
       .from("designed_training_supports")
       .select("session_id");
+    if (ownedSessionIds) {
+      designedQuery = designedQuery.in(
+        "session_id",
+        Array.from(ownedSessionIds)
+      );
+    }
+    const { data: designed, error: designedErr } = await designedQuery;
     if (designedErr || !designed) return 0;
     const sessionIds = Array.from(
       new Set(
@@ -207,7 +235,7 @@ export async function countSupportsAwaitingQualityReview(): Promise<number> {
     );
     if (sessionIds.length === 0) return 0;
 
-    // Étape 2 : reviews `validated` parmi ces sessions.
+    // Étape 3 : reviews `validated` parmi ces sessions.
     const { data: validated, error: reviewErr } = await client
       .from("support_quality_reviews")
       .select("session_id")

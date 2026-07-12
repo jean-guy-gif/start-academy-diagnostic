@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { ProfileWithRole } from "@/lib/auth/roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import {
   buildActivityLabel,
@@ -213,25 +214,34 @@ export async function listActivityLogsByDiagnostic(
 }
 
 /**
- * Flux inter-commercial du cockpit — décision T-10c-BIS (2026-07-09) :
- * on expose les **métadonnées d'événement** (type, acteur, horodatage,
- * label whitelist) mais **jamais le contenu libre**. La colonne
- * `event_description` (texte libre 500 chars, alimenté notamment par
- * `note_added`) est expressément **exclue du SELECT** — elle contient
- * des notes internes commerciales et n'a rien à faire dans un flux
- * inter-commercial. Le journal détaillé d'une session
- * (`/api/sessions/[id]/activity`, protégé par `assertCanAccessSession`)
- * conserve `event_description` pour les seuls propriétaires. Pour tuer
- * tout doute côté type, on force `eventDescription: null` post-mapping
- * — pas de propagation d'`undefined`.
+ * Cockpit — activité récente cloisonnée par ownership (T-11, 2026-07-09).
+ *
+ * • Rôle `admin`     → voit toute l'activité Start Academy.
+ * • Autres internes  → voit :
+ *     - l'activité de ses propres sessions (`session_id ∈ mes sessions`)
+ *     - OU de ses propres diagnostics (`diagnostic_id ∈ mes diagnostics`)
+ *     - OU les actions dont il est l'acteur (`actor_id = profile.id`)
+ *
+ * `event_description` (texte libre `note_added`) reste exclu du SELECT
+ * dans tous les cas — décision T-10c-BIS (2026-07-09). Le journal
+ * détaillé d'une session (`/api/sessions/[id]/activity`, protégé par
+ * `assertCanAccessSession`) conserve `event_description` pour les seuls
+ * propriétaires.
+ *
+ * Historique posture :
+ *   • T-10c « cockpit partagé » → **invalidé par T-11** (2026-07-09).
+ *     Le contenu réellement exposé (noms clients, PII dirigeant,
+ *     budgets, CA N-1) rendait la posture partagée intenable.
  */
 export async function listRecentActivity(
+  profile: ProfileWithRole,
   limit = 10
 ): Promise<ActivityLogRecord[]> {
   const client = createSupabaseAdminClient();
   if (!client) return [];
+  const isAdmin = profile.role === "admin";
   try {
-    const { data, error } = await client
+    let query = client
       .from("activity_logs")
       // event_description volontairement retiré (cf. commentaire ci-dessus).
       .select(
@@ -239,6 +249,38 @@ export async function listRecentActivity(
       )
       .order("created_at", { ascending: false })
       .limit(limit);
+
+    if (!isAdmin) {
+      // Résolution des IDs qui appartiennent au profile — nécessaire
+      // pour construire un filtre `.or(...)` couvrant sessions, diagnostics
+      // et actions personnelles. Deux SELECT `id` légers indexés par
+      // `created_by`.
+      const [sessRes, diagRes] = await Promise.all([
+        client
+          .from("training_sessions")
+          .select("id")
+          .eq("created_by", profile.id),
+        client
+          .from("diagnostics")
+          .select("id")
+          .eq("created_by", profile.id),
+      ]);
+      const sessionIds =
+        ((sessRes.data as { id: string }[] | null) ?? []).map((r) => r.id);
+      const diagIds =
+        ((diagRes.data as { id: string }[] | null) ?? []).map((r) => r.id);
+
+      const clauses: string[] = [`actor_id.eq.${profile.id}`];
+      if (sessionIds.length > 0) {
+        clauses.push(`session_id.in.(${sessionIds.join(",")})`);
+      }
+      if (diagIds.length > 0) {
+        clauses.push(`diagnostic_id.in.(${diagIds.join(",")})`);
+      }
+      query = query.or(clauses.join(","));
+    }
+
+    const { data, error } = await query;
     if (error || !data) return [];
     return (data as Omit<ActivityLogRow, "event_description">[]).map((row) => ({
       ...rowToRecord({ ...row, event_description: null }),

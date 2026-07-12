@@ -439,6 +439,8 @@ gpg --symmetric --cipher-algo AES256 preprod_backup_*.tar.gz
 
 ## 8. Audit Storage formel
 
+> **✅ §8 CLOS — 2026-07-12.** Checklist 8.1→8.8 déroulée : bucket privé, 0 policy `storage.objects` (RLS actif, seul service_role passe), signed URL 60 s en dur (`document-service.ts:110`), **0 occurrence de `getPublicUrl`** dans `src/`, whitelist MIME stricte (12 types, pas de SVG ni exe), taille max 10 Mo, `storage_path` jamais renvoyé aux payloads API. Tests négatifs 4/4 rejets attendus (sans token 400, MIME `.exe` 400 `mime_not_allowed`, 11 Mo 400 `too_large`, token invalide 403 `not_found`). Cohérence Storage/DB 1:1 sur 4 fichiers (§8 orphelins tranché à zéro). Deux findings tirés du run : **F-1 corrigé** par migration `20260712140000_extend_bucket_session_documents_limits.sql` (file_size_limit + allowed_mime_types au niveau bucket, defense-in-depth) + test de contrat `mime-whitelist.contract.test.ts` ; **F-2 documenté** dans `operations-runbook.md §8` (canal RGPD manuel) et tracé §11.5 backlog post-pilote (route DELETE admin-only). Détails F-1/F-2 en §11.2 T-15/T-16.
+
 ### 8.1 Checklist
 
 | # | Vérification | Comment | Attendu |
@@ -460,8 +462,8 @@ gpg --symmetric --cipher-algo AES256 preprod_backup_*.tar.gz
 
 ### 8.3 Acceptance critère §8
 
-- [ ] 8.1 → 8.8 tous OK.
-- [ ] Au moins 1 test négatif passé.
+- [x] 8.1 → 8.8 tous OK. — 6 verts stricts + F-1 corrigé (migration bucket) + F-2 documenté (runbook §8 canal RGPD, route DELETE backlog).
+- [x] Au moins 1 test négatif passé. — 4/4 rejets attendus (dev server local, HTTP réel).
 
 ---
 
@@ -565,6 +567,8 @@ Exemples de cas :
 | **T-12** | **Dette non-bloquante — `scripts/restore-test.sh` non rejouable en une passe (2026-07-12, §7 run initial).** Après un échec au milieu d'une restauration (URL mal formée, service_role incorrect, etc.), la garde (B) « projet vierge » du script refuse la relance parce que `public.tables > 0`. L'opérateur doit intercaler à la main `truncate auth.users cascade; drop schema public cascade; create schema public;` puis rappliquer les permissions Supabase par défaut, avant de pouvoir rejouer. Non bloquant tant que le script sert un test §7 ponctuel, mais friction connue à documenter. | ⏳ Dette non-bloquante | à assigner | Ajouter un flag `--reset-target` optionnel qui joue en préambule (après la garde A, avant la garde B) : `truncate auth.users cascade` + `drop schema public cascade; create schema public;` + `grant all on schema public to postgres, service_role;`. Garde (A) reste intacte — le reset ne peut jamais viser la préprod. Alternative retenue en attendant : mode d'emploi bref dans `docs/restore-test-log.md` pour la relance manuelle. |
 | **T-13** | **Dette non-bloquante — Docker + Supabase : IPv6 direct injoignable, obligation Session pooler IPv4 (2026-07-12, §7 run initial).** Le container `postgres:17` local (via `docker run`) n'a pas de route IPv6 par défaut ; la connexion string directe Supabase (`db.<ref>.supabase.co:5432`) résout uniquement en AAAA et le TCP timeout. Solution appliquée : basculer sur le Session pooler (`aws-0-<region>.pooler.supabase.com:5432`, format `postgres.<ref>` pour le user), qui fournit un endpoint IPv4. Non documenté dans le header du script initial. | ✅ Résolu (documenté header script + prérequis) | Claude | Header `scripts/restore-test.sh` mis à jour dans PR #12 avec exigence explicite : `RESTORE_DB_URL` doit pointer sur le Session pooler (IPv4). Exemple donné dans le commentaire prérequis. Sinon `psql` timeout `could not connect to server: Cannot assign requested address`. |
 | **T-14** | **Compromis connu — mot de passe DB visible dans `ps auxww` pendant `docker run` (2026-07-12, §7 run initial).** Le fix de la fonction `psql_test` (PR #12) passe `"$RESTORE_DB_URL"` en argument direct à `docker run … psql "$RESTORE_DB_URL"`. Le mot de passe transite donc via les arguments du process `docker run` côté hôte pendant la durée de chaque commande psql. Acceptable pour un test §7 local jetable sur poste dev — refusé si le script devait un jour tourner en CI ou sur machine partagée. | ⏳ Dette non-bloquante | à assigner | Refactor optionnel : décomposer `RESTORE_DB_URL` en `PGHOST`/`PGUSER`/`PGDATABASE`/`PGPASSWORD` et passer uniquement `PGPASSWORD` via `-e PGPASSWORD=...` (variable env conteneur, non-visible dans `ps` côté hôte). À implémenter si/quand le script quitte le poste local (CI, cron, machine partagée). |
+| **T-15** | **F-1 (§8 audit Storage, 2026-07-12) — bucket `session-documents` sans `file_size_limit` ni `allowed_mime_types` au niveau Supabase Storage.** La sécurité MIME + taille reposait entièrement sur `validateFileUpload` en JS (`document-types.ts`) appelé par la route publique `/api/public/upload-document`. Aucun impact sur le comportement actuel (un seul handler d'écriture, il valide correctement), mais **filet 2e ligne absent** : un futur handler d'upload qui oublierait `validateFileUpload` pourrait stocker un `.exe` de 500 Mo sans que Storage refuse quoi que ce soit. Découvert pendant la checklist §8.1 (interrogation `storage.buckets` : `file_size_limit=NULL`, `allowed_mime_types=NULL`). | ✅ **Corrigé (PR #15)** | Claude | Migration additive `supabase/migrations/20260712140000_extend_bucket_session_documents_limits.sql` : `update storage.buckets set file_size_limit = 10485760, allowed_mime_types = array[<12 MIME>] where id = 'session-documents';`. Aligné strictement sur `MAX_FILE_SIZE_BYTES` et `ALLOWED_MIME_TYPES` de `document-types.ts:54-73`. Test de contrat `src/lib/documents/mime-whitelist.contract.test.ts` : parse le fichier de migration, compare les 12 MIME aux clés `ALLOWED_MIME_TYPES`, vérifie que `file_size_limit === MAX_FILE_SIZE_BYTES`. Test échoue si divergence (vérifié en supprimant `'text/plain'` de la migration → assertion rouge). Defense-in-depth pure, aucun impact fonctionnel. |
+| **T-16** | **F-2 (§8 audit Storage, 2026-07-12) — aucune route DELETE de document exposée dans l'app.** Constat : `find src/app/api -name route.ts | xargs grep "DELETE"` sur le sous-arbre documents ne retourne aucun handler. Seul `.remove([storagePath])` du code est le rollback interne l179 de `upload-document/route.ts` (cleanup blob si INSERT DB échoue). Effet sécurité : positif — pas de fuite de suppression cross-owner, pas d'orphelin blob depuis un delete raté (§8 orphelins confirmé à 0). Effet opérationnel : un opérateur ne peut pas retirer un document depuis l'app en cas d'upload erroné (mauvais fichier participant, RIB tiers, etc.). | ✅ **Documenté** (canal RGPD manuel) + entrée backlog | Claude | (a) `docs/operations-runbook.md §8` : ajout d'un encadré en tête signalant l'absence de route DELETE, l'ordre impératif **blob AVANT ligne DB** (inverser laisse un orphelin), et le statut « canal RGPD provisoire ». La procédure manuelle qui suit reste identique (5 étapes : identifier session/doc, DELETE Storage API, DELETE row, activity_log manuel, vérif signed URL). (b) Ajout §11.5 backlog post-pilote : route `DELETE /api/sessions/[id]/documents/[docId]` **admin-only** avec `assertCanAccessSession` + `remove` blob + `delete` row + `activity_log`, transaction atomique. |
 
 **Exception migration tracée** : la migration `20260708100000_extend_supports_source_check.sql` a été **appliquée sur préprod le 2026-07-08 AVANT merge sur `main`** (backup pré-push `preprod_before_T4_20260708_1438.sql`, 84 kB schéma seul, base sans données). Motif : nécessaire pour valider en environnement réel que T-5 est bien une cascade de T-4 avant de coder les fixes T-3/T-6. **Règle réaffirmée** : hors exception opérationnelle explicite comme celle-ci, une migration ne doit être poussée en préprod qu'APRÈS merge sur `main`. Toute exception future doit être tracée dans ce registre (ticket + motif + backup).
 
@@ -620,6 +624,17 @@ heuristique.
 Les 5 erreurs #1-5 restent dette suivie ; elles pourront être
 absorbées dans un lot de nettoyage lint transverse (post-pilote).
 
+### 11.5 Backlog post-pilote
+
+Items identifiés pendant le sprint stabilisation mais dont l'implémentation
+attend le retour du pilote pour être priorisée. Ils ne bloquent pas
+l'ouverture pilote — soit une procédure manuelle existe et suffit à court
+terme, soit le besoin n'est pas critique.
+
+| # | Item | Origine | Décision d'attente |
+|---|---|---|---|
+| B-1 | **Route `DELETE /api/sessions/[id]/documents/[docId]` admin-only.** `assertCanAccessSession(auth.profile, sessionId)` → `client.storage.from(STORAGE_BUCKET).remove([storage_path])` → `client.from("session_documents").delete().eq("id", docId)` → `createActivityLog({ eventType: "document_deleted", … })`. Transaction atomique : si le `.remove` blob échoue, ne pas supprimer la row (blob absent en Storage mais row présente = déjà géré par le check inverse §8). Si le `.delete` row échoue APRÈS un remove blob réussi, re-upload impossible (le blob est perdu) — donc suivre l'ordre : remove blob puis delete row, journaliser tout échec. | §11.2 T-16 (F-2 §8) | En attente : la procédure manuelle runbook §8 couvre le RGPD au 1er pilote. Route à implémenter dès qu'un opérateur remonte un besoin fréquent (> 1 demande / semaine). |
+
 ---
 
 ## 12. Contraintes
@@ -627,8 +642,12 @@ absorbées dans un lot de nettoyage lint transverse (post-pilote).
 - **Ne pas modifier le code** pendant le sprint stabilisation
   (sauf correctif identifié dans §11.2 / §11.3, sous forme de
   hotfix ciblé).
-- **Ne pas créer de migration** SQL nouvelle. Les 29 migrations
-  listées §3 sont l'état figé.
+- **Ne pas créer de migration** SQL nouvelle (sauf correctif
+  identifié dans §11.2, sous forme de migration additive strictement
+  ciblée). L'état figé du sprint est **30 migrations** : les 29 listées
+  §3 + `20260712140000_extend_bucket_session_documents_limits.sql`
+  (T-15 / F-1 §8, defense-in-depth Storage — aucune modification de
+  schéma applicatif, uniquement configuration bucket).
 - **Ne pas brancher** Gmail / Calendar / Drive — la valeur ajoutée
   passera par le pilote distant et la mesure d'usage avant
   intégrations externes.

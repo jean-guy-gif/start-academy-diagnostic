@@ -370,6 +370,18 @@ seront :
 
 ## 8. Incident — Document sensible à supprimer
 
+> **⚠️ Finding F-2 (§8 audit Storage, 2026-07-12) — canal RGPD provisoire.**
+> Aucune route DELETE de document n'est exposée dans l'app (choix sûr,
+> tracé §11.2). Toute demande RGPD de droit à l'effacement passe donc par
+> la procédure manuelle ci-dessous, exécutée par un opérateur admin
+> (dashboard Supabase ou API `service_role`). L'ordre **blob Storage
+> AVANT ligne DB** est impératif : inverser laisse un blob orphelin dont
+> l'existence n'est plus tracée en base (invisible côté app, mais présent
+> côté bucket). Une route DELETE dédiée `admin-only`
+> (`assertCanAccessSession` + `.remove([storage_path])` + `delete` row +
+> `activity_log`, atomique) est au backlog post-pilote (cf. §12 du plan
+> de stabilisation preprod). D'ici là, ce §8 est le seul chemin autorisé.
+
 Cas typique : un participant demande la suppression de sa CNI
 (droit à l'effacement RGPD).
 

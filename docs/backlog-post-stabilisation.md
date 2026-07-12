@@ -161,25 +161,36 @@ utilisateur externe. Le curseur ici bascule facilement en BLOQUANT.
 ### 3.1 CI Vercel rouge chronique
 
 - **Nature** : sécurité / infra (posture).
-- **Priorité** : **P0**.
-- **Statut pilote** : **BLOQUANT** avant tout pilote public.
-- **Origine** : constat récurrent PRs #10 à #15 (registre technique
-  interne). Vercel deployment preview retourne `fail` de façon
+- **Priorité** : ~~P0~~ — levé.
+- **Statut pilote** : **✅ Résolu (PR #19), Vercel Preview vert confirmé 2026-07-12**.
+- **Origine** : constat récurrent PRs #10 à #17 (registre technique
+  interne). Vercel deployment preview retournait `fail` de façon
   systématique alors que la CI GitHub Actions `typecheck + test + build`
-  passe. Ignoré jusqu'ici parce que non-bloquant pour le merge sur
-  `main` — mais **inacceptable** dès qu'on ouvre à un client externe :
-  on n'a plus la visibilité sur l'état effectif d'un déploiement.
+  passait.
 
-**Hypothèses à investiguer** :
-- Variables d'environnement du preview environment non provisionnées
-  (Supabase URL, service_role, OpenRouter, etc.).
-- Différence Turbopack (build local) vs webpack (build preview Vercel).
-- Erreur Node version / package manager côté preview.
+**Diagnostic** : le preview environment Vercel n'a pas les env vars
+serveur (`SUPABASE_SERVICE_ROLE_KEY`, `OPENROUTER_API_KEY`, …)
+provisionnées. Next.js tentait de prerender toutes les pages du
+sous-arbre `(app)/` et crashait sur `settings/modules/page.tsx` →
+`getTrainingModules` → `createSupabaseAdminClient` qui exigeait la clé
+service_role au build time. Les 13 autres pages `(app)/` échappaient au
+crash uniquement parce qu'elles déléguent au client — accident
+architectural qui aurait cassé dès qu'une nouvelle page serveur y
+serait ajoutée.
 
-**Livrable attendu** : soit une CI Vercel verte reproductible, soit un
-document interne qui trace explicitement pourquoi elle échoue et quel
-mécanisme la remplace (ex : preview sur Vercel désactivé + build local
-avant merge). Sans l'un des deux, ne pas ouvrir le pilote.
+**Fix Option B validée** : `export const dynamic = "force-dynamic"`
+posé UNE fois sur `src/app/(app)/layout.tsx` (PR #19). Motif : toutes
+les pages sous `(app)/` sont derrière l'auth gate (cookies via
+`requireRole`), donc dynamiques par nature — aucune n'a de sens
+statique. La contrainte au niveau layout couvre le sous-arbre entier
+sans risque d'oubli sur les futures pages. Nettoyage au passage du
+`force-dynamic` local devenu redondant dans `cockpit/page.tsx`.
+
+**Preuve de propagation Next.js 16.2** (`npm run build` local) : les 14
+pages `(app)/` sont désormais toutes marquées `ƒ (Dynamic)`, y compris
+`/settings/modules` qui crashait. La seule page statique restante est
+`/forbidden` (hors sous-arbre `(app)/`, cohérent). **PR #19 est la
+première PR avec un check Vercel VERT depuis la mémoire du projet.**
 
 ### 3.2 §9 rotation `SUPABASE_SERVICE_ROLE_KEY`
 
@@ -208,12 +219,13 @@ utilisateur externe est de la faire tourner :
 
 ## Synthèse — Bloquant pilote vs post-pilote
 
-**2 bloquants pilote restants** au 2026-07-12 (T-8 résolu par PR #17).
+**1 bloquant pilote restant** au 2026-07-12 (§3.1 résolu par PR #19,
+T-8 par PR #17).
 
 | # | Item | Nature | Priorité | Statut pilote |
 |---|---|---|:---:|:---:|
-| 3.1 | CI Vercel rouge chronique | Sécurité / infra | **P0** | **BLOQUANT** |
 | 3.2 | §9 rotation `SUPABASE_SERVICE_ROLE_KEY` | Sécurité | **P0** | **BLOQUANT** |
+| 3.1 | ~~CI Vercel rouge chronique~~ | Sécurité / infra | ~~P0~~ | ✅ Résolu (PR #19) |
 | 2.2 | ~~T-8 — action UI transition statut session~~ | Dette produit | ~~P0 conditionnel~~ | ✅ Résolu (PR #17) |
 | 1.1 | Proposition commerciale v2 | Produit | P1 | POST-PILOTE |
 | 2.1 | T-7 — catch silencieux services | Dette technique | P2 | POST-PILOTE |

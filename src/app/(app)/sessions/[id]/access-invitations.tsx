@@ -165,12 +165,16 @@ function AccessTypeBlock({
         return;
       }
 
-      const origin =
-        typeof window !== "undefined" ? window.location.origin : "";
+      // `json.url` est ABSOLUE (préfixée côté serveur par
+      // `absoluteAppUrl()` dans `create-access-link/route.ts`).
+      // On la prend telle quelle — aucune reconstruction avec
+      // `window.location.origin` qui renverrait l'URL de déploiement
+      // instable Vercel (`https://…-hashXXX-…vercel.app`) au lieu
+      // de l'URL stable configurée dans `NEXT_PUBLIC_APP_URL`.
       setGenerated({
         id: json.id ?? null,
         url: json.url,
-        fullUrl: `${origin}${json.url}`,
+        fullUrl: json.url,
         accessType: json.accessType,
         expiresAt: json.expiresAt ?? null,
         recipient: email || name || "—",

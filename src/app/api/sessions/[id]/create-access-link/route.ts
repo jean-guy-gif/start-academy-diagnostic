@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
 import { assertCanAccessSession } from "@/lib/auth/assert-session-access";
+import { absoluteAppUrl } from "@/lib/config/app-url";
 import { ACCESS_TYPES } from "@/lib/public-access/access-types";
 import { generatePublicToken } from "@/lib/public-access/public-token-service";
 import { createActivityLog } from "@/lib/activity/activity-log-service";
@@ -110,11 +111,16 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     // 6. On NE retourne JAMAIS `token_hash`. Le brut ne réapparaît
-    //    qu'ici, une seule fois.
+    //    qu'ici, une seule fois. `url` est ABSOLUE (préfixée par
+    //    `absoluteAppUrl()`) — le client la copie/envoie telle quelle
+    //    sans jamais reconstruire un origin avec `window.location`.
+    //    Cf. commentaires de `src/lib/config/app-url.ts` sur la
+    //    politique de fallback (dev = localhost, prod = throw si
+    //    `NEXT_PUBLIC_APP_URL` manquante).
     return NextResponse.json({
       id: generated.id,
       accessType: generated.accessType,
-      url: generated.publicPath,
+      url: `${absoluteAppUrl()}${generated.publicPath}`,
       token: generated.token,
       expiresAt: generated.expiresAt,
       maxUses: generated.maxUses,

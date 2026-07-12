@@ -402,3 +402,179 @@ Tests :
 interne), exécuter au minimum étapes 1 + 2 + 3 (zero downside, gros
 gain de robustesse). Étapes 4–6 dès que des données client réelles
 sont saisies.
+
+---
+
+## 7. Règle `service_role` — usage encadré de `createSupabaseAdminClient`
+
+**Contexte** : `createSupabaseAdminClient()` renvoie un client Supabase
+authentifié en `service_role`. Ce client **contourne la RLS
+délibérément** — il ne connaît pas `auth.uid()`, il voit tout. C'est
+un outil précieux (agrégats admin, triggers post-signup, moteurs de
+scoring…) mais **chaque usage est un point de fuite potentiel** dès
+qu'une donnée porteuse d'ownership est lue ou écrite sans garde.
+
+Le durcissement RLS Phase 1 → 2E encadre l'accès **via cookie user
+JWT** (RLS applique). Toutes les routes/services qui passent par
+`createSupabaseAdminClient` **court-circuitent ce filet** — c'est
+volontaire pour certains usages, dangereux pour tous les autres.
+
+### 7.1 La règle en une phrase
+
+> **Tout appel à `createSupabaseAdminClient()` DOIT être accompagné,
+> dans la même fonction, d'un des trois garde-fous suivants :**
+>
+> 1. **Assertion d'ownership** — `assertCanAccessDiagnostic`,
+>    `assertCanAccessSession`, `assertCanAccessClient` juste avant
+>    l'utilisation du client (ou dans la fonction appelante, avec
+>    trace explicite).
+> 2. **Filtre explicite par owner** — `.eq("created_by", profile.id)`
+>    directement dans la requête, OU `.in(...)` sur des IDs déjà
+>    filtrés par owner en amont.
+> 3. **Commentaire justifiant un accès global légitime** — la balise
+>    `// service_role justifié : <motif>` juste au-dessus de l'appel
+>    ou de la fonction. Cas acceptés : catalogue commun (référentiel,
+>    modules), agrégat admin-only, hook post-signup, best-effort
+>    logging côté serveur.
+
+**Aucun** appel `createSupabaseAdminClient` ne doit rester sans l'un
+des trois. C'est la condition d'entrée du code review sécurité.
+
+### 7.2 Findings §5 comme cas d'école
+
+Les 3 régressions ci-dessous sont toutes des cas où la règle n'était
+pas appliquée. À utiliser en revue de code pour former les futurs
+contributeurs.
+
+**T-9 (bloquant pilote — 5 routes durcies PR #9, 2026-07-09)**
+- Fichiers : `src/app/api/diagnostics/{route.ts, [id]/summary/route.ts,
+  [id]/answers/route.ts, [id]/status/route.ts, [id]/participants/route.ts}`.
+- Symptôme : tout commercial voyait ET modifiait les diagnostics des
+  autres. Fuite PII dirigeant + notes internes + business intelligence.
+- Cause : `createSupabaseAdminClient` + `requireApiRole` seul, **sans**
+  `assertCanAccessDiagnostic`. Le rôle interne était vérifié, pas
+  l'ownership de la ressource ciblée par `[id]`.
+- Cible de la règle : garde-fou n°1 (`assertCanAccess*`) manquant.
+- Correction : ajout de `assertCanAccessDiagnostic(auth.profile,
+  diagnosticId)` juste après `requireApiRole`, sur le modèle exact des
+  routes `/api/sessions/[id]/*` qui, elles, respectaient la règle.
+
+**T-10c-BIS (finding sécurité — PR #10, 2026-07-09)**
+- Fichier : `src/lib/activity/activity-log-service.ts` →
+  `listRecentActivity()`.
+- Symptôme : le champ `event_description` (texte libre 500 chars,
+  alimenté par `note_added` = notes internes commerciales) remontait
+  dans le payload de `/api/activity/recent`. Le composant cockpit ne
+  l'affichait pas mais il transitait — exploitable via DevTools
+  Network ou curl.
+- Cause : `createSupabaseAdminClient` accompagné d'un commentaire
+  justifiant l'accès global (« cockpit partagé sur les métadonnées »),
+  MAIS le SELECT incluait un champ texte libre non-métadonnée.
+- Cible de la règle : garde-fou n°3 (commentaire de justification)
+  présent mais incomplet — la portée du service_role n'était pas
+  cadrée finement (métadonnées OK, texte libre non).
+- Correction : `event_description` retiré du SELECT + `eventDescription:
+  null` forcé post-mapping (double garde-fou).
+
+**T-11 (bloquant pilote — cockpit cloisonné PR #11, 2026-07-09)**
+- Fichiers : `src/lib/cockpit/cockpit-service.ts`,
+  `src/lib/activity/activity-log-service.ts`,
+  `src/lib/training-support/support-quality-service.ts`,
+  `src/lib/post-training/post-training-service.ts`.
+- Symptôme : le cockpit d'un commercial B affichait le pipeline, les
+  KPIs, l'activité et les liens vers les dossiers du commercial A.
+  Noms de clients, PII dirigeant, budgets 4 368 € / reste à charge
+  2 184 €, CA N-1 nominatif, emails dans l'activité récente.
+- Cause : 4 fonctions utilisaient `createSupabaseAdminClient` sans
+  filtre `created_by`, en s'appuyant sur un commentaire historique
+  (« l'API serveur reste libre d'agréger ») qui datait d'AVANT la
+  Phase 2B et n'avait pas été rectifié.
+- Cible de la règle : garde-fou n°2 (`.eq("created_by", ...)`)
+  manquant, ET garde-fou n°3 (commentaire) présent mais **périmé** —
+  la posture agrégat globale n'était plus légitime après Phase 2B.
+- Correction : `getCockpitData(profile)`, `listRecentActivity(profile)`
+  et les 2 `count*(profile)` reçoivent le profil ; non-admin filtre
+  par owner (Étape 1 : `.eq("created_by", profile.id)` sur sessions
+  + diagnostics ; Étape 2 : `.in(...)` sur les 10 tables filles avec
+  les IDs retenus). Blocs IA du cockpit passés admin-only. Les
+  commentaires justificatifs des services concernés ont été réécrits
+  pour refléter la posture Phase 2B.
+
+### 7.3 Défense en profondeur — proposition de test de garde
+
+Les 3 findings partagent une signature commune : **un appel
+`createSupabaseAdminClient()` sans garde-fou visible à proximité**.
+Un test grep exhaustif attraperait mécaniquement le prochain oubli.
+
+**Contrat proposé (à implémenter dans une PR dédiée, hors scope de
+cette section doc)** — un test Vitest ou un script `smoke:service-role`
+qui :
+
+1. **Grep exhaustif** de tous les usages : `grep -rn
+   "createSupabaseAdminClient" src/` (fichiers `*.ts`/`*.tsx`, hors
+   `*.test.ts`, hors `src/lib/supabase/server.ts` qui contient la
+   définition).
+2. **Pour chaque occurrence**, cherche dans une fenêtre de ±20 lignes
+   la présence d'au moins un des marqueurs :
+   - `assertCanAccessDiagnostic(` ou `assertCanAccessSession(` ou
+     `assertCanAccessClient(`
+   - `.eq("created_by",` ou `.eq('created_by',`
+   - `.in("` avec un nom de variable évoquant un pré-filtre owner
+     (`ownedSessionIds`, `sessionIds` construit depuis un
+     `.eq("created_by", ...)` en amont, etc. — heuristique laxiste
+     par défaut, à durcir sur retour d'expérience).
+   - Un commentaire contenant `service_role justifié` (marqueur
+     explicite, canonique — à normaliser).
+3. **Rapporte** les occurrences sans marqueur : chemin fichier, ligne,
+   extrait du contexte, garde-fous détectés (aucun). Sortie tabulaire
+   comme `security-smoke.mjs`.
+4. **Exit non-nul** si au moins un findings. Utilisable en CI.
+
+**Faux positifs attendus** : la détection `.in(...)` sur IDs
+pré-filtrés est heuristique — pas d'analyse de flot. Un fichier qui
+passe en amont par `assertCanAccessDiagnostic` mais où
+`createSupabaseAdminClient` est appelé plus tard, hors de la fenêtre
+±20, sera un faux positif. **Traitement** : la balise
+`// service_role justifié : ownership vérifiée en amont` sur l'appel
+suffit à faire taire le test — c'est une acceptation explicite du
+reviewer, tracée pour l'audit.
+
+**Faux négatifs** : le pattern `.eq("created_by", …)` sur une
+variable qui n'est PAS `profile.id` (ex : `.eq("created_by",
+someOtherUserId)` obtenu depuis une source non fiable) passe la
+détection. C'est la limite de la heuristique — le vrai fix c'est la
+review humaine. Le test attrape 90 % des oublis, pas 100 %.
+
+**Positionnement** : ce test est **complémentaire** aux 3 garde-fous
+runtime (assert helpers + policies RLS + tests d'ownership par route).
+Il n'est pas suffisant seul — c'est un filet de sécurité au moment du
+merge, pas un remplaçant du review.
+
+### 7.4 Chemins actuellement conformes (audit 2026-07-12, post-T-11)
+
+Après les PR #9 / #10 / #11, l'inventaire (grep exhaustif
+`createSupabaseAdminClient` sur `src/`) répartit les usages ainsi :
+
+- **Garde-fou n°1 (`assertCanAccess*`)** : 10 routes API — les 6
+  `/api/sessions/[id]/*`, `/api/diagnostics/[id]/{summary, answers,
+  status, participants}`, `/api/analyze-training-need`,
+  `/api/design-training-support`, `/api/generate-training-proposal`,
+  `/api/generate-training-support`, `/api/diagnostics/create`
+  (`assertCanAccessClient`), `/api/email/create-draft` (assertion
+  conditionnelle).
+- **Garde-fou n°2 (filtre owner)** : `getCockpitData`,
+  `listRecentActivity`, `countSupportsAwaitingQualityReview`,
+  `countSessionsAwaitingPostTrainingReview`, `/api/diagnostics`
+  (racine, RLS-aware via `createSupabaseRouteHandlerClient`).
+- **Garde-fou n°3 (commentaire justifiant l'accès global)** :
+  `getTrainingModules` (catalogue), `assert-diagnostic-access` +
+  `assert-session-access` + `assert-client-access` (les helpers
+  d'assertion eux-mêmes — méta-usage légitime), `activity-log-service`
+  (créations best-effort, pas de fuite car pas de lecture), routes
+  publiques `/api/public/*` (auth via token public).
+
+**À terme** : quand le test de garde sera implémenté, ces
+justifications globales devront porter la balise canonique
+`// service_role justifié : <motif>` pour être détectées comme
+« explicitement acceptées ». Cette PR ne le fait pas — c'est du
+travail de suivi.

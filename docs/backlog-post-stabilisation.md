@@ -195,38 +195,73 @@ première PR avec un check Vercel VERT depuis la mémoire du projet.**
 ### 3.2 §9 rotation `SUPABASE_SERVICE_ROLE_KEY`
 
 - **Nature** : sécurité (hygiène de clé).
-- **Priorité** : **P0**.
-- **Statut pilote** : **BLOQUANT** — dernier geste avant d'ouvrir
-  l'accès au pilote.
+- **Priorité** : ~~P0~~ — levé.
+- **Statut pilote** : **✅ Résolu 2026-07-12**.
 - **Origine** : `preprod-stabilization-plan.md` §9.
+- **Registre d'exécution** : [`docs/security-rotation-log.md`](security-rotation-log.md) entrée du 2026-07-12.
 
-Motif : la clé `SUPABASE_SERVICE_ROLE_KEY` a **transité pendant les
-manipulations §5 (smoke sécurité), §7 (restore test) et §8 (audit
-Storage)** — chargée dans des shells, présente dans `.env.local`,
-exportée dans des subshells pour les tests curl. Elle n'a a priori pas
-fuité (aucun `echo` du contenu, aucun commit accidentel — .gitignore
-couvre `.env*`), mais **la posture prudente** avant d'ouvrir à un
-utilisateur externe est de la faire tourner :
-1. Dashboard Supabase → Settings → API → Service role → Roll.
-2. Récupérer la nouvelle clé, la déposer côté serveur préprod (`.env`)
-   et sur Vercel (variables d'environnement).
-3. Redémarrer / redéployer.
-4. Dérouler la checklist §9.6 du plan (charge cockpit, routes publiques
-   tokenisées, routes IA, route documents).
-5. Documenter dans le registre interne : date, opérateur, environnement.
+Motif consigné : la clé a transité pendant les manipulations §5 (smoke
+sécurité), §7 (restore test), §8 (audit Storage), et un incident
+`vercel link` qui a écrasé `.env.local` (reconstruit depuis Timeline
+VS Code). Rotation préventive comme dernier geste avant ouverture
+pilote. Inventaire confirmé avant Roll : la clé n'existait qu'à **un
+seul endroit stockable** (`.env.local`) — Vercel n'a aucune env var
+provisionnée (`vercel env ls` vide), GitHub Actions utilise un
+placeholder littéral. Séquence exécutée en < 5 min sans fenêtre de
+préprod down publique (rotation locale). Checklist §9.6 verte : cockpit
+charge avec la nouvelle clé, ancienne clé révoquée par Supabase.
+
+### 3.3 Env vars Vercel — chantier ouvert quand pilote sur URL publique
+
+- **Nature** : infra (préparation déploiement public).
+- **Priorité** : P1 (à faire quand le pilote passe de local/démo à URL Vercel).
+- **Statut pilote** : POST-PILOTE (tant que le pilote tourne en local).
+- **Origine** : découvert pendant le pré-audit §9 (2026-07-12).
+
+Le projet Vercel `start-academy-diagnostic` n'a **aucune env var**
+provisionnée (`vercel env ls` → « No Environment Variables found »).
+Le déploiement `https://start-academy-diagnostic.vercel.app` est
+fonctionnellement cassé côté runtime : toute route serveur qui appelle
+`createSupabaseAdminClient()` failfast puisque
+`SUPABASE_SERVICE_ROLE_KEY` est undefined en environnement Vercel. Le
+fix PR #19 `force-dynamic` au layout `(app)/` rend le **build** Vercel
+vert (plus de crash au prerender), mais **pas le runtime**.
+
+**Non bloquant** tant que le pilote tourne en local (`npm run dev` sur
+la machine de Laurent, pointant vers la DB Supabase préprod) ou en
+démo interne. **Deviendra bloquant** dès qu'un utilisateur externe
+consulte une URL publique.
+
+**À faire** au moment du passage à URL publique :
+1. Provisionner via `vercel env add` ou dashboard Vercel les 5–8
+   variables serveur : `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+   `OPENROUTER_API_KEY`, `OPENROUTER_SITE_URL`, `AI_MONTHLY_BUDGET_EUR`,
+   éventuellement `SUPABASE_ACCESS_TOKEN`, etc. (inventaire à
+   consolider depuis `.env.local`).
+2. Répercuter dans les 3 environments Vercel (Production, Preview,
+   Development).
+3. Redéployer, checklist post-rotation type §9.6 sur l'URL publique.
+
+**Corollaire** : la prochaine rotation `SUPABASE_SERVICE_ROLE_KEY` devra
+couvrir `.env.local` **ET** Vercel env vars en parallèle (retour au
+plan initial 2 endroits). Le log `security-rotation-log.md §Leçons`
+trace cette dépendance.
 
 ---
 
 ## Synthèse — Bloquant pilote vs post-pilote
 
-**1 bloquant pilote restant** au 2026-07-12 (§3.1 résolu par PR #19,
-T-8 par PR #17).
+**🎯 Aucun bloquant pilote restant** au 2026-07-12. Les trois §3.1 /
+§3.2 / T-8 ont été résolus en cascade dans la journée (PR #17, #19,
+rotation clé).
 
 | # | Item | Nature | Priorité | Statut pilote |
 |---|---|---|:---:|:---:|
-| 3.2 | §9 rotation `SUPABASE_SERVICE_ROLE_KEY` | Sécurité | **P0** | **BLOQUANT** |
+| 3.2 | ~~§9 rotation `SUPABASE_SERVICE_ROLE_KEY`~~ | Sécurité | ~~P0~~ | ✅ Résolu 2026-07-12 |
 | 3.1 | ~~CI Vercel rouge chronique~~ | Sécurité / infra | ~~P0~~ | ✅ Résolu (PR #19) |
 | 2.2 | ~~T-8 — action UI transition statut session~~ | Dette produit | ~~P0 conditionnel~~ | ✅ Résolu (PR #17) |
+| 3.3 | Env vars Vercel — quand URL publique | Infra | P1 | POST-PILOTE (bloquant si URL publique) |
 | 1.1 | Proposition commerciale v2 | Produit | P1 | POST-PILOTE |
 | 2.1 | T-7 — catch silencieux services | Dette technique | P2 | POST-PILOTE |
 | 2.4 | F-2 / B-1 — route DELETE document | Dette produit | P2 | POST-PILOTE |

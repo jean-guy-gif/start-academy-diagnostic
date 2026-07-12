@@ -87,24 +87,36 @@ Cascade type T-4→T-5 très longue à diagnostiquer sans trace SQL.
 ### 2.2 T-8 — Pas d'action UI pour transition de statut session
 
 - **Nature** : dette produit (workflow interne).
-- **Priorité** : **P0 conditionnel** — bloquant SI le pilote va
-  jusqu'au bout du parcours post-formation.
-- **Statut pilote** : **BLOQUANT PILOTE** (si parcours complet).
-- **Origine** : §11.2 T-8 (nouveau ticket, créé dans ce même commit).
+- **Priorité** : ~~P0 conditionnel~~ — livré.
+- **Statut pilote** : **✅ Résolu (PR #17), vérifié manuellement 2026-07-12**.
+- **Origine** : §11.2 T-8.
 
-Aucune commande UI ne permet aujourd'hui de basculer une
-`training_sessions.status` de `validated → delivered`. Le smoke §4
-étape 22 a nécessité un `UPDATE public.training_sessions SET status =
-'delivered' WHERE id = …` en SQL éditeur pour tester le flow post-training
-review. Un pilote client qui va **jusqu'au bout du parcours** (formation
-dispensée + review post-formation par le dirigeant) tombera sur le même
-mur.
+Livré par PR #17 (2026-07-12) sous forme d'une machine à états
+`session-status-transitions.ts` (source unique, 9 AVANT + 7 RETOUR = 16
+arêtes verrouillées par contract test), d'une route
+`PATCH /api/sessions/[id]/status` alignée sur le pattern `support-quality`,
+et d'un bloc UI dans la fiche session (bouton « Passer à l'étape
+suivante » + dropdown « Changer manuellement » + confirmation modale
+sur `delivered` / `report_sent`). Cascade **T-8-BIS** livrée dans la
+même PR : `GET/PUT /api/sessions/[id]/post-training-review` refuse
+désormais toute saisie sur une session hors `{delivered, report_sent}`
+avec 409 `session_status_precondition`, et trace la divergence via
+l'event dédié `post_training_review_modified_after_send` sur
+`report_sent`.
 
-**Décision d'ouverture pilote** :
-- Si le premier pilote **s'arrête à la validation pédagogique** (pas de
-  formation réellement dispensée) → T-8 devient **POST-PILOTE**.
-- Si le premier pilote **va jusqu'au review post-formation** → T-8
-  devient **BLOQUANT** et doit être livré avant l'ouverture.
+**Vérification manuelle 2026-07-12** :
+- Avancement de statut via l'UI sur la fiche session, sans passer par
+  SQL éditeur.
+- Garde T-8-BIS confirmée : bilan post-formation refusé (409) sur une
+  session en `created` avec message explicite ; accepté sur `delivered`.
+- Transitions interdites absentes du dropdown « Changer manuellement »
+  (la matrice est bien la source de vérité côté client aussi).
+- Confirmation modale renforcée déclenchée sur transition vers
+  `delivered` et `report_sent`, non déclenchée sur les autres.
+
+Canal hotfix inchangé : `UPDATE public.training_sessions SET status =
+'…' WHERE id = '…'` en SQL éditeur, délibérément inconfortable — admin
+n'a aucun override applicatif.
 
 ### 2.3 T-12 / T-13 / T-14 — Améliorations script restore `§7`
 
@@ -196,11 +208,13 @@ utilisateur externe est de la faire tourner :
 
 ## Synthèse — Bloquant pilote vs post-pilote
 
+**2 bloquants pilote restants** au 2026-07-12 (T-8 résolu par PR #17).
+
 | # | Item | Nature | Priorité | Statut pilote |
 |---|---|---|:---:|:---:|
 | 3.1 | CI Vercel rouge chronique | Sécurité / infra | **P0** | **BLOQUANT** |
 | 3.2 | §9 rotation `SUPABASE_SERVICE_ROLE_KEY` | Sécurité | **P0** | **BLOQUANT** |
-| 2.2 | T-8 — action UI transition statut session | Dette produit | **P0 conditionnel** | **BLOQUANT si parcours complet** |
+| 2.2 | ~~T-8 — action UI transition statut session~~ | Dette produit | ~~P0 conditionnel~~ | ✅ Résolu (PR #17) |
 | 1.1 | Proposition commerciale v2 | Produit | P1 | POST-PILOTE |
 | 2.1 | T-7 — catch silencieux services | Dette technique | P2 | POST-PILOTE |
 | 2.4 | F-2 / B-1 — route DELETE document | Dette produit | P2 | POST-PILOTE |

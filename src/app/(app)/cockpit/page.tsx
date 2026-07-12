@@ -105,23 +105,30 @@ const STAGE_BADGE: Record<CockpitStage, string> = {
 };
 
 export default async function CockpitPage() {
-  await requireRole(INTERNAL_APP_ROLES);
+  const profile = await requireRole(INTERNAL_APP_ROLES);
+  const isAdmin = profile.role === "admin";
+
+  // T-11 (2026-07-09) — cloisonnement cockpit + blocs IA admin-only.
+  // Le budget IA est celui de Start Academy (indicateur d'entreprise) ;
+  // `getRecentAiGenerations` exposerait les IDs de dossiers tiers.
+  // On ne les appelle même pas pour un non-admin — pas de données
+  // vides, pas de round-trip inutile.
   const [
     data,
     recentActivity,
+    supportsAwaitingQuality,
+    postTrainingAwaiting,
     aiUsage,
     recentAiCalls,
     aiBudget,
-    supportsAwaitingQuality,
-    postTrainingAwaiting,
   ] = await Promise.all([
-    getCockpitData(),
-    listRecentActivity(10),
-    getAiUsageSummary(),
-    getRecentAiGenerations(5),
-    getAiMonthlyBudgetStatus(),
-    countSupportsAwaitingQualityReview(),
-    countSessionsAwaitingPostTrainingReview(),
+    getCockpitData(profile),
+    listRecentActivity(profile, 10),
+    countSupportsAwaitingQualityReview(profile),
+    countSessionsAwaitingPostTrainingReview(profile),
+    isAdmin ? getAiUsageSummary() : Promise.resolve(null),
+    isAdmin ? getRecentAiGenerations(5) : Promise.resolve(null),
+    isAdmin ? getAiMonthlyBudgetStatus() : Promise.resolve(null),
   ]);
 
   return (
@@ -291,12 +298,17 @@ export default async function CockpitPage() {
         </CardContent>
       </Card>
 
-      {/* F. Usage IA / OpenRouter */}
-      <AiUsageBlock
-        summary={aiUsage}
-        recentCalls={recentAiCalls}
-        budget={aiBudget}
-      />
+      {/* F. Usage IA / OpenRouter — admin-only (T-11, 2026-07-09).
+          Budget IA = indicateur d'entreprise Start Academy, pas
+          d'individu ; `getRecentAiGenerations` exposerait les IDs
+          de dossiers tiers. */}
+      {isAdmin && aiUsage && recentAiCalls && aiBudget && (
+        <AiUsageBlock
+          summary={aiUsage}
+          recentCalls={recentAiCalls}
+          budget={aiBudget}
+        />
+      )}
 
       {/* E. Activité récente */}
       <Card className="border-border/60 bg-white">

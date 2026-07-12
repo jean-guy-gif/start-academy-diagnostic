@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { ProfileWithRole } from "@/lib/auth/roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import {
   calculateTotalTrainingBudget,
@@ -118,7 +119,22 @@ interface DesignedSupportRow {
 // API publique du service
 // ---------------------------------------------------------------------------
 
-export async function getCockpitData(): Promise<CockpitData> {
+/**
+ * Cockpit — cloisonné par ownership (T-11, 2026-07-09).
+ *
+ * • Rôle `admin`     → voit tout Start Academy (pas de filtre).
+ * • Autres internes  → voit uniquement ses propres dossiers
+ *   (`created_by = profile.id` sur `training_sessions` et
+ *   `diagnostics`). Les 10 tables filles suivent par jointure sur les
+ *   IDs retenus (`.in()`) — pas de lecture globale puis filtre en
+ *   mémoire, pour éviter tout leak PII/CA N-1 côté `clients` et
+ *   `diagnostic_participants`.
+ *
+ * Le catalogue `training_modules` reste global (référentiel commun).
+ */
+export async function getCockpitData(
+  profile: ProfileWithRole
+): Promise<CockpitData> {
   const client = createSupabaseAdminClient();
   if (!client) {
     const data = emptyCockpitData();
@@ -133,12 +149,50 @@ export async function getCockpitData(): Promise<CockpitData> {
     return data;
   }
 
-  // Chargements en parallèle. Tout est tolérant à l'erreur : si une
-  // table est inaccessible, on bascule sur tableau vide pour la
-  // section concernée.
+  const isAdmin = profile.role === "admin";
+
+  // Étape 1 — sessions + diagnostics filtrés par ownership.
+  const sessionsQuery = client
+    .from("training_sessions")
+    .select(
+      "id, client_id, diagnostic_id, recommendation_id, status, expected_participants, created_at, updated_at"
+    )
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  const diagnosticsQuery = client
+    .from("diagnostics")
+    .select(
+      "id, client_id, status, expected_participants, updated_at, alerts_snapshot"
+    )
+    .order("updated_at", { ascending: false })
+    .limit(200);
+
+  const [sessionsRes, diagnosticsRes] = await Promise.all([
+    isAdmin ? sessionsQuery : sessionsQuery.eq("created_by", profile.id),
+    isAdmin ? diagnosticsQuery : diagnosticsQuery.eq("created_by", profile.id),
+  ]);
+
+  const sessions: SessionRow[] =
+    (sessionsRes.data as SessionRow[] | null) ?? [];
+  const diagnostics: DiagnosticRow[] =
+    (diagnosticsRes.data as DiagnosticRow[] | null) ?? [];
+
+  // Étape 2 — dérivation des IDs pour les jointures aval. Sans dossier
+  // en propre (non-admin sans sessions ni diagnostics), on ne charge
+  // rien d'autre — le cockpit est vide, ce qui est le comportement
+  // voulu (le commercial pilote depuis zéro).
+  const sessionIds = sessions.map((s) => s.id);
+  const diagIds = diagnostics.map((d) => d.id);
+  const clientIdSet = new Set<string>();
+  for (const s of sessions) if (s.client_id) clientIdSet.add(s.client_id);
+  for (const d of diagnostics) if (d.client_id) clientIdSet.add(d.client_id);
+  const clientIds = Array.from(clientIdSet);
+
+  // Étape 3 — 10 tables filles + catalogue global, tolérant à l'erreur.
+  const emptyRes = { data: [], error: null };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const empty = emptyRes as any;
   const [
-    sessionsRes,
-    diagnosticsRes,
     clientsRes,
     recosRes,
     participantsRes,
@@ -151,50 +205,74 @@ export async function getCockpitData(): Promise<CockpitData> {
     postTrainingReviewsRes,
     trainingModulesCountRes,
   ] = await Promise.all([
-    client
-      .from("training_sessions")
-      .select(
-        "id, client_id, diagnostic_id, recommendation_id, status, expected_participants, created_at, updated_at"
-      )
-      .order("updated_at", { ascending: false })
-      .limit(200),
-    client
-      .from("diagnostics")
-      .select(
-        "id, client_id, status, expected_participants, updated_at, alerts_snapshot"
-      )
-      .order("updated_at", { ascending: false })
-      .limit(200),
-    client.from("clients").select("id, company_name, director"),
-    client
-      .from("recommendations")
-      .select("id, diagnostic_id, total_duration_hours"),
-    client.from("session_participants").select("session_id"),
-    client
-      .from("diagnostic_participants")
-      .select(
-        "diagnostic_id, professional_status, previous_year_production"
-      ),
-    client.from("session_date_options").select("session_id, status"),
-    client
-      .from("public_access_tokens")
-      .select("session_id, access_type, is_active, expires_at"),
-    client.from("training_supports").select("session_id, status"),
-    client.from("designed_training_supports").select("session_id, status"),
-    client
-      .from("support_quality_reviews")
-      .select("session_id, status"),
-    client
-      .from("post_training_reviews")
-      .select("session_id, status"),
+    clientIds.length > 0
+      ? client
+          .from("clients")
+          .select("id, company_name, director")
+          .in("id", clientIds)
+      : empty,
+    diagIds.length > 0
+      ? client
+          .from("recommendations")
+          .select("id, diagnostic_id, total_duration_hours")
+          .in("diagnostic_id", diagIds)
+      : empty,
+    sessionIds.length > 0
+      ? client
+          .from("session_participants")
+          .select("session_id")
+          .in("session_id", sessionIds)
+      : empty,
+    diagIds.length > 0
+      ? client
+          .from("diagnostic_participants")
+          .select(
+            "diagnostic_id, professional_status, previous_year_production"
+          )
+          .in("diagnostic_id", diagIds)
+      : empty,
+    sessionIds.length > 0
+      ? client
+          .from("session_date_options")
+          .select("session_id, status")
+          .in("session_id", sessionIds)
+      : empty,
+    sessionIds.length > 0
+      ? client
+          .from("public_access_tokens")
+          .select("session_id, access_type, is_active, expires_at")
+          .in("session_id", sessionIds)
+      : empty,
+    sessionIds.length > 0
+      ? client
+          .from("training_supports")
+          .select("session_id, status")
+          .in("session_id", sessionIds)
+      : empty,
+    sessionIds.length > 0
+      ? client
+          .from("designed_training_supports")
+          .select("session_id, status")
+          .in("session_id", sessionIds)
+      : empty,
+    sessionIds.length > 0
+      ? client
+          .from("support_quality_reviews")
+          .select("session_id, status")
+          .in("session_id", sessionIds)
+      : empty,
+    sessionIds.length > 0
+      ? client
+          .from("post_training_reviews")
+          .select("session_id, status")
+          .in("session_id", sessionIds)
+      : empty,
+    // Catalogue global — pas de cloisonnement, c'est un référentiel.
     client
       .from("training_modules")
       .select("id", { count: "exact", head: true }),
   ]);
 
-  const sessions: SessionRow[] = (sessionsRes.data as SessionRow[] | null) ?? [];
-  const diagnostics: DiagnosticRow[] =
-    (diagnosticsRes.data as DiagnosticRow[] | null) ?? [];
   const clientsMap = new Map<string, ClientLite>();
   for (const c of (clientsRes.data as ClientLite[] | null) ?? []) {
     clientsMap.set(c.id, c);
@@ -336,22 +414,28 @@ export async function getCockpitData(): Promise<CockpitData> {
 // Façade publique alternative — pour respecter le contrat du PRD.
 // ---------------------------------------------------------------------------
 
-export async function getCockpitOverview(): Promise<CockpitOverview> {
-  return (await getCockpitData()).overview;
+export async function getCockpitOverview(
+  profile: ProfileWithRole
+): Promise<CockpitOverview> {
+  return (await getCockpitData(profile)).overview;
 }
 
-export async function getCockpitPipeline(): Promise<CockpitPipelineItem[]> {
-  return (await getCockpitData()).pipeline;
+export async function getCockpitPipeline(
+  profile: ProfileWithRole
+): Promise<CockpitPipelineItem[]> {
+  return (await getCockpitData(profile)).pipeline;
 }
 
-export async function getCockpitPriorityActions(): Promise<
-  CockpitPriorityAction[]
-> {
-  return (await getCockpitData()).priorityActions;
+export async function getCockpitPriorityActions(
+  profile: ProfileWithRole
+): Promise<CockpitPriorityAction[]> {
+  return (await getCockpitData(profile)).priorityActions;
 }
 
-export async function getCockpitAlerts(): Promise<CockpitAlert[]> {
-  return (await getCockpitData()).alerts;
+export async function getCockpitAlerts(
+  profile: ProfileWithRole
+): Promise<CockpitAlert[]> {
+  return (await getCockpitData(profile)).alerts;
 }
 
 // ---------------------------------------------------------------------------

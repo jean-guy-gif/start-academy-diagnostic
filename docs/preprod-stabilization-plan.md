@@ -267,6 +267,20 @@ pour ce smoke : garder l'app cohérente avec sa cible produit
 
 ## 5. Smoke tests sécurité
 
+> **✅ §5 CLOS — 2026-07-12.** Script `security-smoke.mjs` : 29 ✅ / 0 ❌
+> / 9 n/a. Laurent a validé les 4 vérifs UI manuelles (5.3.5, 5.4.2,
+> 5.4.3, 5.5.2). Les 5 n/a restants (5.1.4, 5.2.9, 5.3.2, 5.3.3, 5.4.1)
+> sont hors périmètre préprod (ressources non créées) — à couvrir avant
+> ouverture pilote si les rôles/tokens concernés sont activés. Trois
+> findings ouverts et résolus pendant l'exécution : **T-9** (fuite
+> cross-commercial `/api/diagnostics/*` → PR #9), **T-10c-BIS**
+> (`event_description` exposé dans `activity/recent` → PR #10),
+> **T-11** (cockpit non cloisonné exposant noms clients + PII dirigeant
+> + CA N-1 + budgets → PR #11). Règle doctrinale service_role formalisée
+> §7 de `rls-hardening-plan.md` (PR #12) ; test de garde `service-role`
+> proposé en §7.3 reste **dette proactive avant pilote**. Détails
+> ligne à ligne dans le registre §13.1.2.
+
 À dérouler en parallèle du §4 avec Commercial B.
 
 ### 5.1 Auth
@@ -491,7 +505,7 @@ Tous OUI = pré-prod validée pour pilote distant contrôlé.
 | # | Critère | Statut |
 |---|---|---|
 | 1 | 100 % des smoke fonctionnels §4.2 + §4.3 passent | ✅ (2026-07-08, cf. §13.1.1) |
-| 2 | 100 % des smoke sécurité §5.1 → §5.5 passent (avec confirmation §5.2.14 résolue OU finding ouvert) | ☐ |
+| 2 | 100 % des smoke sécurité §5.1 → §5.5 passent (avec confirmation §5.2.14 résolue OU finding ouvert) | ✅ (2026-07-12, cf. §13.1.2 — findings T-9/T-10c-BIS/T-11 résolus PR #9/#10/#11) |
 | 3 | Backup §6 réalisé et stocké en coffre chiffré | ☐ |
 | 4 | Restauration §7 testée au moins partiellement (3 tables + 1 objet Storage) | ☐ |
 | 5 | Audit Storage §8 OK (8.1 → 8.8) | ☐ |
@@ -776,10 +790,10 @@ présence et refuse de démarrer si l'une manque.
 
 | # | Test | Attendu | Exécution | Verdict | Note |
 |---|---|---|---|---|---|
-| 5.1.1 | Navigateur anon → `/cockpit` | Redirection login | Script (curl `-I`, check 302 / Location) | ☐ | |
-| 5.1.2 | Navigateur anon → `/diagnostics` | Redirection login | Script | ☐ | |
-| 5.1.3 | Navigateur anon → `/api/diagnostics` | 401 `{ code: "unauthenticated" }` | Script | ☐ | |
-| 5.1.4 | Login `client_viewer` → `/cockpit` | 403 (rôle insuffisant) | Script (nécessite compte client_viewer préalable) | ☐ | Laurent crée le compte avant de lancer le script |
+| 5.1.1 | Navigateur anon → `/cockpit` | Redirection login | Script (curl `-I`, check 302 / Location) | ✅ | 2026-07-12 — script
+| 5.1.2 | Navigateur anon → `/diagnostics` | Redirection login | Script | ✅ | 2026-07-12 — script
+| 5.1.3 | Navigateur anon → `/api/diagnostics` | 401 `{ code: "unauthenticated" }` | Script | ✅ | 2026-07-12 — script
+| 5.1.4 | Login `client_viewer` → `/cockpit` | 403 (rôle insuffisant) | Script (nécessite compte client_viewer préalable) | n/a | non testé — hors périmètre préprod, ressources non créées ; à couvrir avant ouverture pilote si les rôles/tokens concernés sont activés |
 
 **§5.2 Cross-commercial (Commercial B sur ressources A)**
 
@@ -790,61 +804,73 @@ refusées.
 
 | # | Test | Attendu | Exécution | Verdict | Note |
 |---|---|---|---|---|---|
-| 5.2.1 | B : `/sessions` | Aucune session de A visible | Script (PostgREST `training_sessions?select=id` avec JWT B → 0 ligne A) | ☐ | |
-| 5.2.2 | B : `/diagnostics` | Aucun diagnostic de A visible | Script (idem sur `diagnostics`) | ☐ | |
-| 5.2.3 | B : GET `/api/sessions/<sessionA>/documents` | 403 | Script | ☐ | |
-| 5.2.4 | B : POST `/api/generate-training-support { sessionId: <sessionA> }` | 403, aucun OpenRouter | Script + double-check `ai_generation_logs` count | ☐ | |
-| 5.2.5 | B : POST `/api/design-training-support` | 403 idem | Script | ☐ | |
-| 5.2.6 | B : POST `/api/sessions/<sessionA>/create-access-link` | 403 | Script | ☐ | |
-| 5.2.7 | B : GET `/api/sessions/<sessionA>/date-options` | 403 | Script | ☐ | |
-| 5.2.8 | B : POST `/api/sessions/<sessionA>/date-options` | 403 | Script | ☐ | |
-| 5.2.9 | B : DELETE `/api/sessions/<sessionA>/date-options/<optionId>` | 403 | Script (nécessite un optionId de A en env — sinon marque n/a) | ☐ | |
-| 5.2.10 | B : GET `/api/sessions/<sessionA>/activity` | 403 | Script | ☐ | |
-| 5.2.11 | B : POST `/api/activity/log { sessionId: <sessionA> }` | 403 | Script | ☐ | |
-| 5.2.12 | B : POST `/api/analyze-training-need { diagnosticId: <diagA> }` | 403, aucun OpenRouter | Script | ☐ | |
-| 5.2.13 | B : POST `/api/generate-training-proposal { diagnosticId: <diagA> }` | 403, aucun OpenRouter | Script | ☐ | |
-| 5.2.14 | B : GET `/api/diagnostics/<diagA>/summary` | 200 ? À confirmer | Script (rapport le status obtenu — 200 = finding à ouvrir) | ☐ | historiquement suspect, cf. §11.2 |
-| 5.2.15 | B : GET `/api/sessions/<sessionA>/post-training-review` | 403 | Script | ☐ | |
-| 5.2.16 | B : PUT `/api/sessions/<sessionA>/post-training-review` | 403 | Script | ☐ | |
-| 5.2.17 | B : GET `/api/sessions/<sessionA>/support-quality` | 403 | Script | ☐ | |
-| 5.2.18 | B : PUT `/api/sessions/<sessionA>/support-quality` | 403 | Script | ☐ | |
-| 5.2.19 | B : GET `/api/diagnostics` (racine) avec cookie B | HTTP 200 + items ne contient PAS diagnostic A | Script (T-9 #1 — extension 2026-07-09) | ☐ | Nouveau — avant T-9 la route bypassait RLS et B voyait tout |
-| 5.2.20 | B : POST `/api/diagnostics/<diagA>/answers` | 403 | Script (T-9 #3 — extension 2026-07-09) | ☐ | |
-| 5.2.21 | B : PATCH `/api/diagnostics/<diagA>/status` | 403 | Script (T-9 #4 — extension 2026-07-09) | ☐ | |
-| 5.2.22 | B : GET `/api/diagnostics/<diagA>/participants` | 403 | Script (T-9 #5 read — extension 2026-07-09) | ☐ | |
-| 5.2.23 | B : PUT `/api/diagnostics/<diagA>/participants` | 403 | Script (T-9 #5 write — extension 2026-07-09) | ☐ | |
+| 5.2.1 | B : `/sessions` | Aucune session de A visible | Script (PostgREST `training_sessions?select=id` avec JWT B → 0 ligne A) | ✅ | 2026-07-12 — script |
+| 5.2.2 | B : `/diagnostics` | Aucun diagnostic de A visible | Script (idem sur `diagnostics`) | ✅ | 2026-07-12 — script |
+| 5.2.3 | B : GET `/api/sessions/<sessionA>/documents` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.4 | B : POST `/api/generate-training-support { sessionId: <sessionA> }` | 403, aucun OpenRouter | Script + double-check `ai_generation_logs` count | ✅ | 2026-07-12 — script |
+| 5.2.5 | B : POST `/api/design-training-support` | 403 idem | Script | ✅ | 2026-07-12 — script |
+| 5.2.6 | B : POST `/api/sessions/<sessionA>/create-access-link` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.7 | B : GET `/api/sessions/<sessionA>/date-options` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.8 | B : POST `/api/sessions/<sessionA>/date-options` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.9 | B : DELETE `/api/sessions/<sessionA>/date-options/<optionId>` | 403 | Script (nécessite un optionId de A en env — sinon marque n/a) | n/a | non testé — hors périmètre préprod, ressources non créées ; à couvrir avant ouverture pilote si les rôles/tokens concernés sont activés |
+| 5.2.10 | B : GET `/api/sessions/<sessionA>/activity` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.11 | B : POST `/api/activity/log { sessionId: <sessionA> }` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.12 | B : POST `/api/analyze-training-need { diagnosticId: <diagA> }` | 403, aucun OpenRouter | Script | ✅ | 2026-07-12 — script |
+| 5.2.13 | B : POST `/api/generate-training-proposal { diagnosticId: <diagA> }` | 403, aucun OpenRouter | Script | ✅ | 2026-07-12 — script |
+| 5.2.14 | B : GET `/api/diagnostics/<diagA>/summary` | 403 (après T-9 fix PR #9) | Script | ✅ | 2026-07-12 — script (avant PR #9 = FINDING 200) |
+| 5.2.15 | B : GET `/api/sessions/<sessionA>/post-training-review` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.16 | B : PUT `/api/sessions/<sessionA>/post-training-review` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.17 | B : GET `/api/sessions/<sessionA>/support-quality` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.18 | B : PUT `/api/sessions/<sessionA>/support-quality` | 403 | Script | ✅ | 2026-07-12 — script |
+| 5.2.19 | B : GET `/api/diagnostics` (racine) avec cookie B | HTTP 200 + items ne contient PAS diagnostic A | Script (T-9 #1 — extension 2026-07-09) | ✅ | 2026-07-12 — script |
+| 5.2.20 | B : POST `/api/diagnostics/<diagA>/answers` | 403 | Script (T-9 #3 — extension 2026-07-09) | ✅ | 2026-07-12 — script |
+| 5.2.21 | B : PATCH `/api/diagnostics/<diagA>/status` | 403 | Script (T-9 #4 — extension 2026-07-09) | ✅ | 2026-07-12 — script |
+| 5.2.22 | B : GET `/api/diagnostics/<diagA>/participants` | 403 | Script (T-9 #5 read — extension 2026-07-09) | ✅ | 2026-07-12 — script |
+| 5.2.23 | B : PUT `/api/diagnostics/<diagA>/participants` | 403 | Script (T-9 #5 write — extension 2026-07-09) | ✅ | 2026-07-12 — script |
 
 **§5.3 Tokens publics**
 
 | # | Test | Attendu | Exécution | Verdict | Note |
 |---|---|---|---|---|---|
-| 5.3.1 | GET `/public/session/<token_invalide>` | Page erreur propre | Script (GET, check body OU `X-Robots-Tag` etc. — rapporte statut + fragment de réponse) | ☐ | |
-| 5.3.2 | GET `/public/session/<token_expiré>` | Page erreur propre | Script (nécessite un token expiré en env — sinon Laurent en crée un avec expiry passé) | ☐ | |
-| 5.3.3 | GET `/public/session/<token_désactivé>` | Page erreur propre | Script (nécessite un token `is_active=false` en env) | ☐ | |
-| 5.3.4 | POST `/api/public/validate-token { token: <fake> }` | `{ valid: false, reason: ... }` | Script | ☐ | |
-| 5.3.5 | Inspection HTML de `/public/session/<valid_token>` : aucun `token_hash` ni URL Storage brute | UI Laurent (grep manuel sur la page rendue, ou DevTools Network) | ☐ | |
+| 5.3.1 | GET `/public/session/<token_invalide>` | Page erreur propre | Script (GET, check body OU `X-Robots-Tag` etc. — rapporte statut + fragment de réponse) | ✅ | 2026-07-12 — script |
+| 5.3.2 | GET `/public/session/<token_expiré>` | Page erreur propre | Script (nécessite un token expiré en env — sinon Laurent en crée un avec expiry passé) | n/a | non testé — hors périmètre préprod, ressources non créées ; à couvrir avant ouverture pilote si les rôles/tokens concernés sont activés |
+| 5.3.3 | GET `/public/session/<token_désactivé>` | Page erreur propre | Script (nécessite un token `is_active=false` en env) | n/a | non testé — hors périmètre préprod, ressources non créées ; à couvrir avant ouverture pilote si les rôles/tokens concernés sont activés |
+| 5.3.4 | POST `/api/public/validate-token { token: <fake> }` | `{ valid: false, reason: ... }` | Script | ✅ | 2026-07-12 — script |
+| 5.3.5 | Inspection HTML de `/public/session/<valid_token>` : aucun `token_hash` ni URL Storage brute | UI Laurent (grep manuel sur la page rendue, ou DevTools Network) | ✅ | 2026-07-12 — UI Laurent |
 
 **§5.4 Storage**
 
 | # | Test | Attendu | Exécution | Verdict | Note |
 |---|---|---|---|---|---|
-| 5.4.1 | curl direct `/storage/v1/object/session-documents/<path>` sans auth | 400/401 | Script (nécessite un `path` réel en env — sinon utilise le premier objet listé par service_role au démarrage) | ☐ | |
-| 5.4.2 | Inspection HTML fiche session interne : `storage_path` jamais visible | UI Laurent (DevTools view source sur `/sessions/[id]`) | ☐ | |
-| 5.4.3 | Signed URL générée par `/api/sessions/<id>/documents` expire ≤ 60 s | Script (extrait `downloadUrl` de la réponse, GET après 65s → 401) | ☐ | timing test — durée totale ≥ 70s |
+| 5.4.1 | curl direct `/storage/v1/object/session-documents/<path>` sans auth | 400/401 | Script (nécessite un `path` réel en env — sinon utilise le premier objet listé par service_role au démarrage) | n/a | non testé — hors périmètre préprod, ressources non créées ; à couvrir avant ouverture pilote si les rôles/tokens concernés sont activés |
+| 5.4.2 | Inspection HTML fiche session interne : `storage_path` jamais visible | UI Laurent (DevTools view source sur `/sessions/[id]`) | ✅ | 2026-07-12 — UI Laurent |
+| 5.4.3 | Signed URL générée par `/api/sessions/<id>/documents` expire ≤ 60 s | Script (extrait `downloadUrl` de la réponse, GET après 65s → 401) | ✅ | 2026-07-12 — UI Laurent |
 
 **§5.5 RLS / policies anon**
 
 | # | Test | Attendu | Exécution | Verdict | Note |
 |---|---|---|---|---|---|
-| 5.5.1 | `grep -rn "to anon" supabase/migrations/` | 0 occurrence en policy active | Script (spawn grep local) | ☐ | |
-| 5.5.2 | `select polname from pg_policies where polroles::text like '%anon%';` | 0 ligne | UI Laurent (SQL Editor dashboard) — déjà validé 2026-07-07 lors du clôturé push v1.0b, à revérifier post-migration 20260708 | ☐ | |
-| 5.5.3 | curl anon PostgREST sur table durcie (`/rest/v1/training_sessions?apikey=<ANON>`) | `[]` (RLS bloque) | Script | ☐ | |
+| 5.5.1 | `grep -rn "to anon" supabase/migrations/` | 0 occurrence en policy active | Script (spawn grep local) | ✅ | 2026-07-12 — script |
+| 5.5.2 | `select polname from pg_policies where polroles::text like '%anon%';` | 0 ligne | UI Laurent (SQL Editor dashboard) — déjà validé 2026-07-07 lors du clôturé push v1.0b, à revérifier post-migration 20260708 | ✅ | 2026-07-12 — UI Laurent |
+| 5.5.3 | curl anon PostgREST sur table durcie (`/rest/v1/training_sessions?apikey=<ANON>`) | `[]` (RLS bloque) | Script | ✅ | 2026-07-12 — script |
 
-**Acceptance §13.1.2** : 33 lignes en `✅` (26 script + 7 UI-Laurent
-+ SQL brut). Le § 10 acceptance item 2 est cochable dès validation.
-Toute ligne en `❌` ou `⚠️` génère un ticket §11.2. Si 5.2.14 retourne
-200, ticket ouvert immédiatement — c'est le finding historique
-mentionné dans le doc.
+**Acceptance §13.1.2** — CLOS 2026-07-12.
+
+Bilan final :
+- **29 ✅ script** (5.1.1-3 + 5.2.1-8, 5.2.10-23 + 5.3.1, 5.3.4 + 5.5.1, 5.5.3). 5.2.14 est passé du statut « finding historique 200 attendu » à **✅ 403 attendu** après T-9 (PR #9) — le check reste dans le registre comme témoin de la régression corrigée.
+- **4 ✅ UI Laurent** (5.3.5 page publique HTML sans `token_hash`/service_role/`storage/v1` ; 5.4.2 fiche session sans `storage_path` ; 5.4.3 signed URL morte après ~65 s ; 5.5.2 `pg_policies where 'anon' = any(roles)` = 0 ligne).
+- **5 n/a** (5.1.4 client_viewer ; 5.2.9 DATE_OPTION_A_ID ; 5.3.2 token expiré ; 5.3.3 token désactivé ; 5.4.1 STORAGE_OBJECT_PATH) : **hors périmètre préprod, ressources non créées ; à couvrir avant ouverture pilote si les rôles/tokens concernés sont activés**.
+
+Findings résolus pendant l'exécution :
+- **T-9** — fuite cross-commercial `/api/diagnostics/*` (service_role sans ownership). Détecté via 5.2.14 puis audit exhaustif → **PR #9** (5 routes durcies).
+- **T-10c-BIS** — `event_description` (notes internes commerciales) exposé silencieusement dans `activity/recent`. Détecté pendant PR #9 → **PR #10** (retrait SELECT + double garde-fou runtime).
+- **T-11** — cockpit non cloisonné exposant noms clients, PII dirigeant, CA N-1 nominatif, budgets, email commerciaux. Détecté après rejeu §5 par Laurent → **PR #11** (cloisonnement par owner + blocs IA admin-only). Décision produit invalide T-10c.
+
+Garde-fou doctrinal issu de ces 3 findings : **règle service_role** formalisée §7 de `rls-hardening-plan.md` — tout appel `createSupabaseAdminClient()` DOIT être accompagné d'une assertion d'ownership, d'un filtre `created_by`/`in()`, ou d'un commentaire canonique `// service_role justifié : <motif>`. **PR #12** (doc).
+
+Dette proactive avant pilote :
+- **Test de garde §7.3** (`rls-hardening-plan.md`) — grep exhaustif des usages `createSupabaseAdminClient` + détection ±20 lignes des 3 garde-fous + exit non-nul si oubli. À implémenter dans une PR dédiée AVANT ouverture pilote, comme filet CI attrapant le prochain oubli sans review humain.
+- **Balise canonique** `// service_role justifié : <motif>` à poser sur les cas §7.4 (catalogue, helpers d'assertion, best-effort logging, routes publiques) une fois le test de garde en place.
 
 ---
 

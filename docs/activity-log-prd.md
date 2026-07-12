@@ -62,6 +62,15 @@ Toute nouvelle valeur doit être ajoutée ici **et** dans le code.
 | `designed_support_generated` | `/api/design-training-support` succès | success |
 | `support_validated` | validation manuelle (à brancher) | success |
 | `support_archived` | archivage (à brancher) | warning |
+| `support_quality_review_created` | 1ère écriture `PUT /api/sessions/[id]/support-quality` | info |
+| `support_quality_review_updated` | update `PUT /api/sessions/[id]/support-quality` | info |
+| `support_quality_validated` | passage à `status=validated` sur `PUT /api/sessions/[id]/support-quality` | success |
+| `support_quality_rejected` | passage à `status=rejected` sur `PUT /api/sessions/[id]/support-quality` | warning |
+| `post_training_review_created` | 1ère écriture `PUT /api/sessions/[id]/post-training-review` (pré-condition session ∈ {delivered}) | info |
+| `post_training_review_updated` | update `PUT /api/sessions/[id]/post-training-review` (session ∈ {delivered}) | info |
+| `post_training_review_completed` | passage à `status=completed` sur `PUT /api/sessions/[id]/post-training-review` | success |
+| `post_training_review_modified_after_send` | update `PUT /api/sessions/[id]/post-training-review` **sur session en `report_sent`** — trace la divergence potentielle avec la version reçue par le client (T-8-BIS nuance 2) | info |
+| `session_status_changed` | `PATCH /api/sessions/[id]/status` — transition autorisée par la machine à états `session-status-transitions.ts` (T-8). Metadata `{ from, to }`. | info |
 | `note_added` | bouton UI "Ajouter une note interne" | info |
 
 ## 5. Endpoints

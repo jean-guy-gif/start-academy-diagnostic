@@ -420,34 +420,6 @@ async function listLocally(
   return fail(items, error);
 }
 
-export async function updateTrainingSessionStatus(
-  sessionId: string,
-  status: SessionStatus
-): Promise<ServiceResult<TrainingSessionViewModel | null>> {
-  const supabase = createSupabaseBrowserClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("training_sessions")
-        .update({ status })
-        .eq("id", sessionId)
-        .select("*")
-        .single();
-      if (error) throw error;
-      const row = fromSupabaseRow(data);
-      const clientName = await resolveClientName(row.clientId, "supabase");
-      const proposal = await loadProposalForDiagnostic(row.diagnosticId);
-      return ok(
-        assembleViewModel({ row, clientName, proposal, source: "supabase" }),
-        "supabase"
-      );
-    } catch (err) {
-      return updateLocally(sessionId, { status }, errorMessage(err));
-    }
-  }
-  return updateLocally(sessionId, { status }, "Variables Supabase non configurées");
-}
-
 export async function updateTrainingSessionDates(
   sessionId: string,
   dates: string[]

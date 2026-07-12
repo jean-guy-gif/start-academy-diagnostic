@@ -39,6 +39,7 @@ import { SessionDateOptions } from "./session-date-options";
 import { SessionDocuments } from "./session-documents";
 import { SessionActivityJournal } from "./session-activity-journal";
 import { PostTrainingReviewBlock } from "./post-training-review";
+import { SessionStatusActions } from "./session-status-actions";
 import { formatPriceEuros } from "@/lib/pricing/training-pricing";
 
 const STATUS_LABEL: Record<SessionStatus, string> = {
@@ -179,6 +180,17 @@ export function SessionDetailView({ sessionId }: Props) {
               )}
               {session.source === "supabase" ? "Persistée Supabase" : "Stockage local"}
             </Badge>
+            {session.source === "supabase" && (
+              <SessionStatusActions
+                sessionId={session.id}
+                currentStatus={session.status}
+                onStatusChanged={(newStatus) =>
+                  setSession((prev) =>
+                    prev ? { ...prev, status: newStatus } : prev
+                  )
+                }
+              />
+            )}
           </div>
         </div>
       </div>

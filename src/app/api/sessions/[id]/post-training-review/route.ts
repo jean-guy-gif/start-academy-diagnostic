@@ -11,6 +11,55 @@ import {
   updatePostTrainingReview,
 } from "@/lib/post-training/post-training-service";
 import { createActivityLog } from "@/lib/activity/activity-log-service";
+import { getSessionStatusById } from "@/lib/sessions/session-status-service";
+import type { SessionStatus } from "@/types";
+
+/**
+ * Statuts session qui autorisent la lecture / écriture d'un bilan
+ * post-formation (T-8-BIS). Motif produit :
+ *   - `delivered`  = la formation a physiquement eu lieu, un bilan a
+ *     un objet réel à commenter.
+ *   - `report_sent` = le bilan a déjà été envoyé au client ; on autorise
+ *     un update pour corriger une coquille, mais on trace explicitement
+ *     la divergence potentielle avec la version reçue par le client via
+ *     l'event `post_training_review_modified_after_send`.
+ * Tout autre statut → 409 `session_status_precondition`.
+ */
+const REVIEW_ALLOWED_STATUSES: readonly SessionStatus[] = [
+  "delivered",
+  "report_sent",
+] as const;
+
+function isReviewAllowedStatus(status: SessionStatus | null): boolean {
+  if (!status) return false;
+  return (REVIEW_ALLOWED_STATUSES as readonly SessionStatus[]).includes(status);
+}
+
+const STATUS_LABEL: Record<SessionStatus, string> = {
+  created: "Créée",
+  awaiting_client_validation: "En attente validation client",
+  dates_to_position: "Dates à positionner",
+  dates_validated: "Dates validées",
+  collection_open: "Collecte ouverte",
+  data_collected: "Données collectées",
+  support_generating: "Support en génération",
+  support_ready: "Support prêt",
+  delivered: "Formation réalisée",
+  report_sent: "Bilan envoyé",
+};
+
+function preconditionResponse(status: SessionStatus | null) {
+  const label = status ? STATUS_LABEL[status] : "inconnu";
+  return NextResponse.json(
+    {
+      ok: false,
+      code: "session_status_precondition",
+      error: `La session doit être « Formation réalisée » avant de saisir un bilan. Statut actuel : « ${label} ».`,
+      currentStatus: status,
+    },
+    { status: 409 }
+  );
+}
 
 export const runtime = "nodejs";
 
@@ -71,6 +120,15 @@ export async function GET(_request: Request, context: RouteContext) {
   const access = await assertCanAccessSession(auth.profile, sessionId);
   if (!access.ok) return access.response;
 
+  // Garde T-8-BIS — un review ne peut être lu que si la session est
+  // dans un état où sa saisie a du sens (formation dispensée).
+  // Empêche la remontée d'un review fantôme créé sur une session
+  // encore en `created` (incohérence observée pendant smoke §4).
+  const sessionStatus = await getSessionStatusById(sessionId);
+  if (!isReviewAllowedStatus(sessionStatus)) {
+    return preconditionResponse(sessionStatus);
+  }
+
   const review = await getPostTrainingReviewBySession(sessionId);
   return NextResponse.json({ ok: true, review });
 }
@@ -95,6 +153,15 @@ export async function PUT(request: Request, context: RouteContext) {
 
   const access = await assertCanAccessSession(auth.profile, sessionId);
   if (!access.ok) return access.response;
+
+  // Garde T-8-BIS — la saisie/mise à jour d'un bilan n'est autorisée
+  // que si la formation a physiquement eu lieu (statut ∈ delivered,
+  // report_sent). Empêche la création d'un review sur session en
+  // `created` (incohérence observée pendant smoke §4).
+  const sessionStatus = await getSessionStatusById(sessionId);
+  if (!isReviewAllowedStatus(sessionStatus)) {
+    return preconditionResponse(sessionStatus);
+  }
 
   let body: unknown;
   try {
@@ -170,13 +237,26 @@ export async function PUT(request: Request, context: RouteContext) {
   }
 
   // Journalisation activity_logs — JAMAIS le contenu des notes.
+  //
+  // Nuance T-8-BIS : quand la session est en `report_sent`, le bilan
+  // a déjà été envoyé au client. Toute écriture ultérieure crée une
+  // divergence potentielle entre la version reçue par le client et
+  // la version en base. On émet un event dédié
+  // `post_training_review_modified_after_send` (severity warning par
+  // défaut, cf. activity-event-types.ts) qui remplace le trio
+  // standard created/updated/completed pour cet acte précis, afin
+  // que la trace soit non ambiguë dans le journal d'activité.
   const baseEvent = existing
     ? "post_training_review_updated"
     : "post_training_review_created";
-  const eventType =
+  const standardEvent =
     review.status === "completed"
       ? "post_training_review_completed"
       : baseEvent;
+  const eventType =
+    sessionStatus === "report_sent"
+      ? "post_training_review_modified_after_send"
+      : standardEvent;
   const { averageScore, scoresCount } =
     calculatePostTrainingAverageScore(review);
 
@@ -196,6 +276,7 @@ export async function PUT(request: Request, context: RouteContext) {
       followUpActionsCount: review.followUpActions.length,
       hasCommercialOpportunity:
         (review.nextCommercialOpportunity ?? "").trim().length > 0,
+      sessionStatusAtWrite: sessionStatus,
     },
   }).catch(() => {
     /* log déjà silencieux côté service */

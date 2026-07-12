@@ -29,6 +29,8 @@ export const ACTIVITY_EVENT_TYPES = [
   "post_training_review_created",
   "post_training_review_updated",
   "post_training_review_completed",
+  "post_training_review_modified_after_send",
+  "session_status_changed",
   "note_added",
 ] as const;
 
@@ -72,6 +74,9 @@ const DEFAULT_LABELS: Record<ActivityEventType, string> = {
   post_training_review_created: "Suivi post-formation démarré",
   post_training_review_updated: "Suivi post-formation mis à jour",
   post_training_review_completed: "Suivi post-formation complété",
+  post_training_review_modified_after_send:
+    "Bilan modifié après envoi au client",
+  session_status_changed: "Statut de session mis à jour",
   note_added: "Note interne ajoutée",
 };
 

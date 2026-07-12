@@ -47,3 +47,7 @@ dev.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env.restore-test
+
+# backups (dumps SQL + Storage exports — PII, jamais dans le repo)
+backups/

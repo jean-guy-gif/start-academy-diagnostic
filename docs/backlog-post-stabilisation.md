@@ -214,54 +214,66 @@ charge avec la nouvelle clé, ancienne clé révoquée par Supabase.
 ### 3.3 Env vars Vercel — chantier ouvert quand pilote sur URL publique
 
 - **Nature** : infra (préparation déploiement public).
-- **Priorité** : P1 (à faire quand le pilote passe de local/démo à URL Vercel).
-- **Statut pilote** : POST-PILOTE (tant que le pilote tourne en local).
+- **Priorité** : ~~P1~~ — levé.
+- **Statut pilote** : **✅ Résolu 2026-07-12**.
 - **Origine** : découvert pendant le pré-audit §9 (2026-07-12).
 
-Le projet Vercel `start-academy-diagnostic` n'a **aucune env var**
-provisionnée (`vercel env ls` → « No Environment Variables found »).
-Le déploiement `https://start-academy-diagnostic.vercel.app` est
-fonctionnellement cassé côté runtime : toute route serveur qui appelle
-`createSupabaseAdminClient()` failfast puisque
-`SUPABASE_SERVICE_ROLE_KEY` est undefined en environnement Vercel. Le
-fix PR #19 `force-dynamic` au layout `(app)/` rend le **build** Vercel
-vert (plus de crash au prerender), mais **pas le runtime**.
+Provisionnement terminé le 2026-07-12 via dashboard Vercel :
+**9 env vars** désormais présentes sur Vercel (Production, Preview,
+Development), incluant les 8 initialement identifiées + la nouvelle
+`NEXT_PUBLIC_APP_URL` livrée par PR #23 :
 
-**Non bloquant** tant que le pilote tourne en local (`npm run dev` sur
-la machine de Laurent, pointant vers la DB Supabase préprod) ou en
-démo interne. **Deviendra bloquant** dès qu'un utilisateur externe
-consulte une URL publique.
+1. `NEXT_PUBLIC_SUPABASE_URL`
+2. `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. `SUPABASE_SERVICE_ROLE_KEY` (valeur post-rotation §9)
+4. `NEXT_PUBLIC_APP_URL` = `https://start-academy-diagnostic.vercel.app`
+   (Production + Preview), `http://localhost:3000` (Development)
+5. `OPENROUTER_API_KEY`
+6. `OPENROUTER_SITE_URL`
+7. `OPENROUTER_MODEL`
+8. `OPENROUTER_MAX_TOKENS`
+9. `AI_MONTHLY_BUDGET_EUR` (+ `AI_MONTHLY_WARNING_THRESHOLD_PERCENT`
+   si nécessaire pour l'alerte cockpit)
 
-**À faire** au moment du passage à URL publique :
-1. Provisionner via `vercel env add` ou dashboard Vercel les 5–8
-   variables serveur : `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-   `OPENROUTER_API_KEY`, `OPENROUTER_SITE_URL`, `AI_MONTHLY_BUDGET_EUR`,
-   éventuellement `SUPABASE_ACCESS_TOKEN`, etc. (inventaire à
-   consolider depuis `.env.local`).
-2. Répercuter dans les 3 environments Vercel (Production, Preview,
-   Development).
-3. Redéployer, checklist post-rotation type §9.6 sur l'URL publique.
+Redéploiement sans cache effectué post-provisionnement.
 
-**Corollaire** : la prochaine rotation `SUPABASE_SERVICE_ROLE_KEY` devra
-couvrir `.env.local` **ET** Vercel env vars en parallèle (retour au
-plan initial 2 endroits). Le log `security-rotation-log.md §Leçons`
+**Vérification 2026-07-12** : un lien dirigeant généré depuis la prod
+pointe vers l'URL stable `https://start-academy-diagnostic.vercel.app/public/session/…`
+au lieu de l'URL de déploiement instable, y compris quand la
+génération part depuis une URL de déploiement instable (le fix PR #23
+`absoluteAppUrl()` côté serveur enlève toute dépendance à
+`window.location.origin` client).
+
+**Effet net** : l'app est désormais **pleinement opérationnelle en
+ligne** — cockpit, routes publiques tokenisées, routes IA, upload
+document + signed URL, toutes fonctionnelles depuis
+`https://start-academy-diagnostic.vercel.app`. Le pilote peut être
+ouvert en mode `UP` (URL publique) sans bloquant technique
+supplémentaire.
+
+**Corollaire** (trace inchangée) : la prochaine rotation
+`SUPABASE_SERVICE_ROLE_KEY` devra couvrir `.env.local` **ET** Vercel
+env vars en parallèle (retour au plan initial 2 endroits), désormais
+que Vercel est configuré. Le log `security-rotation-log.md §Leçons`
 trace cette dépendance.
 
 ---
 
 ## Synthèse — Bloquant pilote vs post-pilote
 
-**🎯 Aucun bloquant pilote restant** au 2026-07-12. Les trois §3.1 /
-§3.2 / T-8 ont été résolus en cascade dans la journée (PR #17, #19,
-rotation clé).
+**🎯 Aucun bloquant pilote restant** au 2026-07-12. Les quatre §3.1 /
+§3.2 / §3.3 / T-8 ont été résolus dans la journée (PR #17, #19, #23,
+rotation clé, provisionnement Vercel). **L'app est pleinement
+opérationnelle en ligne** sur `https://start-academy-diagnostic.vercel.app`
+— le pilote peut désormais être ouvert en mode URL publique (`UP`) sans
+réserve technique.
 
 | # | Item | Nature | Priorité | Statut pilote |
 |---|---|---|:---:|:---:|
+| 3.3 | ~~Env vars Vercel~~ | Infra | ~~P1~~ | ✅ Résolu 2026-07-12 |
 | 3.2 | ~~§9 rotation `SUPABASE_SERVICE_ROLE_KEY`~~ | Sécurité | ~~P0~~ | ✅ Résolu 2026-07-12 |
 | 3.1 | ~~CI Vercel rouge chronique~~ | Sécurité / infra | ~~P0~~ | ✅ Résolu (PR #19) |
 | 2.2 | ~~T-8 — action UI transition statut session~~ | Dette produit | ~~P0 conditionnel~~ | ✅ Résolu (PR #17) |
-| 3.3 | Env vars Vercel — quand URL publique | Infra | P1 | POST-PILOTE (bloquant si URL publique) |
 | 1.1 | Proposition commerciale v2 | Produit | P1 | POST-PILOTE |
 | 2.1 | T-7 — catch silencieux services | Dette technique | P2 | POST-PILOTE |
 | 2.4 | F-2 / B-1 — route DELETE document | Dette produit | P2 | POST-PILOTE |

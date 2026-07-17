@@ -151,11 +151,15 @@ n'intervient que si un signal remonte.
 
 ---
 
-## 5. Action restante avant premier usage réel — nettoyage des données de test
+## 5. Nettoyage des données de test — ✅ CLOS 2026-07-17
+
+**Exécuté et vérifié le 2026-07-17 par Laurent.** Détails d'exécution
+en §6 Journal des interventions ci-dessous.
 
 Avant que Laurent et Jean-Guy utilisent l'outil sur de vrais dossiers
 clients, les données de test accumulées pendant le sprint stabilisation
-(smoke §4, tests T-9/T-11, restore §7, audit §8) doivent être purgées.
+(smoke §4, tests T-9/T-11, restore §7, audit §8) devaient être purgées.
+Section conservée pour la traçabilité de la procédure appliquée.
 
 ### 5.1 Cabinets à supprimer
 
@@ -327,16 +331,79 @@ post-mise en production interne. À remplir immédiatement.
 - **Prochaine action** : nettoyage des données de test §5 avant premier
   dossier client réel.
 
-### `<DATE>` — Nettoyage des données de test §5
+### 2026-07-17 — Nettoyage des données de test §5
 
-À remplir après exécution.
-
-- **Opérateur** :
+- **Opérateur** : Laurent
 - **Backup pré-nettoyage** :
-- **UUIDs supprimés** :
-- **Storage paths supprimés** :
-- **`ai_generation_logs` orphelins observés** :
-- **Décision comptes de test auth** :
+  - `backups/preprod_schema_20260717_1203.sql` (86 104 B)
+  - `backups/preprod_data_20260717_1203.sql` (423 431 B)
+  - `backups/preprod_auth_data_20260717_1203.sql` (10 476 B)
+  - `backups/storage_20260717_1157/` (4 blobs, `MANIFEST.json`, **SHA-256
+    identiques au backup §6 du 2026-07-12** — conservation prouvée)
+- **`DELETE FROM public.clients WHERE id IN (…)`** exécuté depuis le
+  dashboard Supabase → SQL Editor sur les 4 UUIDs :
+
+  | Cabinet | UUID |
+  |---|---|
+  | Horizon Immo | `280b03cf-bc7d-4d10-81a6-4e4662c52891` |
+  | Marx immobilier | `3233764c-6235-41fe-a156-1d5a90d7497d` |
+  | Pinpin immobilier | `ca96c5ed-5be1-48a7-8f9b-79bf1d5234af` |
+  | TEST | `25e9a2ef-cade-4371-9086-f06990a9fdc5` |
+
+  Cascade effective sur les 15 tables filles (diagnostics,
+  diagnostic_answers, diagnostic_participants, recommendations,
+  recommendation_modules, training_sessions, session_participants,
+  session_documents, session_date_options, training_supports,
+  designed_training_supports, support_quality_reviews,
+  post_training_reviews, public_access_tokens, activity_logs).
+- **Storage paths supprimés** (4 blobs, via API Storage,
+  HTTP 200 × 4) :
+  - `sessions/9b17a34c-…815/participants/jeanguyourmieres7_at_gmail.com/1779688103705-Capture_d_e_cran_2026-05-17_a_20.23.53.png` (784 045 B, SHA-256 `65c055e0e40b…`) — Horizon Immo
+  - `sessions/88fbf218-…163d/participants/jean-guy_at_start-academy.fr/1779700967007-Capture_d_e_cran_2026-05-17_a_20.43.11.png` (2 437 669 B, SHA-256 `01d5ce03df65…`) — Marx immobilier
+  - `sessions/74a97a81-…ada/participants/jean-guy_at_start-academy.fr/1783524815182-Dossier_Tactique_Suivi_IA_A4_1_2_.pdf` (79 812 B, SHA-256 `9d3be3327555…`) — Pinpin immobilier
+  - `sessions/74a97a81-…ada/participants/jean-guy_at_start-academy.fr/1783524824888-check_access_agent_doc.pdf` (764 094 B, SHA-256 `6e103244dffd…`) — Pinpin immobilier
+- **Post-check vérifié** — comptes à zéro sur toutes les tables métier
+  liées :
+
+  | Table | Résiduel après nettoyage |
+  |---|:---:|
+  | `clients` (fuzzy pinpin/marx/horizon/test) | 0 |
+  | `diagnostics` | 0 |
+  | `training_sessions` | 0 |
+  | `session_documents` | 0 |
+  | `diagnostic_participants` | 0 |
+  | `public_access_tokens` | 0 |
+
+- **`ai_generation_logs` orphelins observés** : **10 lignes** avec
+  `diagnostic_id`, `recommendation_id` et `session_id` désormais à
+  `null` (comportement attendu par la contrainte
+  `on delete set null` — audit IA historique préservé).
+- **Décision comptes de test auth** : **conservés** —
+  `chatonleingnier@gmail.com` sert à rejouer un smoke §5 régression
+  cloisonnement quand nécessaire. `jeanguyourmieres7@gmail.com`
+  également conservé pour la même raison. Aucun compte auth supprimé.
+
+### 2026-07-17 — Fix cosmétique `.env.local` ligne 7
+
+Découvert pendant le backup préalable §5 : lors d'un `source .env.local`
+en subshell (`set -a; source .env.local; set +a`), la ligne
+`OPENROUTER_APP_NAME=Start Academy Diagnostic` sans guillemets
+provoquait un warning `command not found: Academy` — bash interprétait
+`Academy` comme une commande à cause du triple mot séparé par espaces
+(en réalité seule `Start` était assigné à `OPENROUTER_APP_NAME`, les
+mots suivants étaient traités comme arguments d'une commande vide).
+
+**Fix appliqué localement** : entourer la valeur de guillemets doubles
+dans `.env.local`. Le warning est éteint, `OPENROUTER_APP_NAME` reçoit
+désormais la chaîne complète `Start Academy Diagnostic`.
+
+`.env.local` est gitignoré (pas dans le repo), donc pas de PR à
+produire pour le fichier lui-même. Point à répercuter dans
+`.env.example` si le pattern se répète sur d'autres vars à espaces —
+non-urgent, tracé ici pour mémoire. **Corollaire** : les scripts
+existants qui font `source .env.local` (dev + `check-catalog-seed.mjs`
++ toutes les procédures de rotation / backup / audit qui l'emploient)
+sont désormais silencieux au démarrage.
 
 ---
 

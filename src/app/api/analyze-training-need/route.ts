@@ -181,24 +181,9 @@ async function loadFromSupabase(
           : null,
     };
 
-    // Cast local : la colonne `agefice_amount_consumed_current_year`
-    // n'est pas encore présente dans database.types.ts (types re-générés
-    // post migration `20260718180000_add_current_year_consumption`). On
-    // caste le résultat du SELECT en un shape connu — le mapping ci-dessous
-    // gère les null.
-    const typedParticipantRows = (participantRows ?? []) as unknown as Array<{
-      professional_status:
-        | "salarie"
-        | "agent_commercial_independant"
-        | "autre"
-        | null;
-      previous_year_production: number | null;
-      eligible_opco: boolean | null;
-      formations_24m_amount: number | null;
-      agefice_amount_consumed_current_year: number | null;
-    }>;
+    const participantRowsList = participantRows ?? [];
 
-    const ratiosParticipants: RatiosParticipantInput[] = typedParticipantRows.map(
+    const ratiosParticipants: RatiosParticipantInput[] = participantRowsList.map(
       (p) => ({
         professionalStatus: p.professional_status,
         previousYearProduction: p.previous_year_production,
@@ -208,7 +193,7 @@ async function loadFromSupabase(
     );
 
     const fundingParticipants: ParticipantFundingInput[] =
-      typedParticipantRows.map((p) => ({
+      participantRowsList.map((p) => ({
         professionalStatus: p.professional_status,
         previousYearProduction: p.previous_year_production,
         eligibleOpco: p.eligible_opco,
@@ -221,16 +206,8 @@ async function loadFromSupabase(
           p.agefice_amount_consumed_current_year ?? null,
       }));
 
-    // Cast local : `opco_ep_amount_consumed_current_year` n'est pas encore
-    // présent dans database.types.ts (migration
-    // `20260718180000_add_current_year_consumption` en cours). Cf. pattern
-    // proposals/participants — cast levé quand types re-générés post db pull.
     const opcoEpAmountConsumedCurrentYear =
-      (
-        diagRow as unknown as {
-          opco_ep_amount_consumed_current_year: number | null;
-        }
-      ).opco_ep_amount_consumed_current_year ?? null;
+      diagRow.opco_ep_amount_consumed_current_year ?? null;
 
     return {
       ratiosDiagnostic,

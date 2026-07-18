@@ -291,14 +291,8 @@ async function loadFromSupabase(
         : null,
       recommendation,
       loadedFromSupabase: true,
-      // Cast local : colonne pas encore dans `database.types.ts`.
-      // Migration `20260718180000_add_current_year_consumption` en cours.
       opcoEpAmountConsumedCurrentYear:
-        (
-          diagRow as unknown as {
-            opco_ep_amount_consumed_current_year: number | null;
-          }
-        ).opco_ep_amount_consumed_current_year ?? null,
+        diagRow.opco_ep_amount_consumed_current_year ?? null,
     };
   } catch {
     return null;

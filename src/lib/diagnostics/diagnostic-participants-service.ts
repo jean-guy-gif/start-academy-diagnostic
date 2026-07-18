@@ -199,20 +199,14 @@ export async function replaceDiagnosticParticipants(params: {
     };
   });
 
-  // Cast `as never[]` : la colonne `agefice_amount_consumed_current_year`
-  // n'est pas encore dans `database.types.ts` (types re-générés post
-  // migration). Le shape est validé par la migration
-  // `20260718180000_add_current_year_consumption.sql` et par les tests
-  // unitaires du service. Cast localisé, pattern identique à la PR
-  // proposals-persistence.
   const { data, error } = await client
     .from("diagnostic_participants")
-    .insert(rows as never[])
+    .insert(rows)
     .select(
       "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_current_year_hours, expert_level, ca_annee_en_cours, agefice_amount_consumed_current_year, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco, opco_ep_amount_consumed_current_year"
     );
   if (error || !data) return [];
-  return (data as unknown as Row[]).map(rowToRecord);
+  return data.map(rowToRecord);
 }
 
 export async function listDiagnosticParticipants(
@@ -228,5 +222,5 @@ export async function listDiagnosticParticipants(
     .eq("diagnostic_id", diagnosticId)
     .order("created_at", { ascending: true });
   if (error || !data) return [];
-  return (data as unknown as Row[]).map(rowToRecord);
+  return data.map(rowToRecord);
 }

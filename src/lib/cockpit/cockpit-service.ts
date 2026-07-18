@@ -184,7 +184,7 @@ export async function getCockpitData(
   const sessions: SessionRow[] =
     (sessionsRes.data as SessionRow[] | null) ?? [];
   const diagnostics: DiagnosticRow[] =
-    ((diagnosticsRes.data as unknown) as DiagnosticRow[] | null) ?? [];
+    (diagnosticsRes.data as DiagnosticRow[] | null) ?? [];
 
   // Étape 2 — dérivation des IDs pour les jointures aval. Sans dossier
   // en propre (non-admin sans sessions ni diagnostics), on ne charge
@@ -312,12 +312,8 @@ export async function getCockpitData(
     string,
     DiagnosticParticipantRow[]
   >();
-  // Cast unknown : colonnes `agefice_amount_consumed_current_year` +
-  // `eligible_opco` pas encore dans `database.types.ts` (migration
-  // 20260718180000 en cours).
-  for (const p of ((diagParticipantsRes.data as unknown) as
-    | DiagnosticParticipantRow[]
-    | null) ?? []) {
+  for (const p of (diagParticipantsRes.data as DiagnosticParticipantRow[] | null) ??
+    []) {
     const list = diagParticipantsByDiag.get(p.diagnostic_id) ?? [];
     list.push(p);
     diagParticipantsByDiag.set(p.diagnostic_id, list);

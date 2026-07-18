@@ -486,20 +486,16 @@ async function loadDirigeantView(
       session.diagnostic_id
     );
     // Chantier A funding-opco-ep §9.1 — consommation OPCO EP annuelle
-    // entreprise (à retrancher du plafond salariés côté funding). Cast
-    // local : colonne pas encore dans `database.types.ts` (migration
-    // 20260718180000 en cours).
+    // entreprise, à retrancher du plafond salariés côté funding
+    // (le retranchement effectif est reporté au chantier B, ici on
+    // ne fait que passer la valeur à `estimateTrainingFunding`).
     const { data: diagFundingRow } = await client
       .from("diagnostics")
       .select("opco_ep_amount_consumed_current_year")
       .eq("id", session.diagnostic_id)
       .maybeSingle();
     const opcoEpAmountConsumedCurrentYear =
-      (
-        diagFundingRow as unknown as {
-          opco_ep_amount_consumed_current_year: number | null;
-        } | null
-      )?.opco_ep_amount_consumed_current_year ?? null;
+      diagFundingRow?.opco_ep_amount_consumed_current_year ?? null;
     if (diagParticipants.length > 0 && costPerParticipant !== null) {
       const summary = estimateTrainingFunding({
         participants: diagParticipants.map((p) => ({

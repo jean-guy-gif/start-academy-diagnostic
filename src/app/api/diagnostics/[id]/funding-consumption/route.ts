@@ -72,16 +72,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  // Cast `as never` : la colonne `opco_ep_amount_consumed_current_year`
-  // n'est pas encore présente dans `database.types.ts` (migration
-  // `20260718180000_add_current_year_consumption` en cours). Le shape
-  // est validé côté DB et par les tests unitaires.
   const { error } = await supabase
     .from("diagnostics")
     .update({
       opco_ep_amount_consumed_current_year:
         parsed.data.opcoEpAmountConsumedCurrentYear,
-    } as never)
+    })
     .eq("id", diagnosticId);
 
   if (error) {

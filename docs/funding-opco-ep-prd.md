@@ -285,7 +285,27 @@ Chaque chantier est indépendant. À implémenter dans l'ordre A → B → C →
 
 ### Chantier A — Fenêtre temporelle année civile + consommation déjà entamée
 
-> **Statut : ✅ livré (2026-07-18, option β).** Collecte des consommations année civile posée (`opco_ep_amount_consumed_current_year` sur `diagnostics` + `agefice_amount_consumed_current_year` sur `diagnostic_participants`, migration additive `20260718180000`). Retranchement AGEFICE per-participant **actif** (§9.2 — plafond et champ tous deux par-indé, pas de dérive). Consommation OPCO EP entreprise **collectée mais calcul volontairement laissé en l'état HEAD** — le cap OPCO EP reste par-participant (bug préexistant vs §3 : plafond entreprise partagé) et retrancher `opco_ep_amount_consumed_current_year` per-participant aurait dupliqué le retranchement N fois par N salariés. **Refonte prévue chantier B** : passer à une enveloppe entreprise (barème par effectif) + retrancher la consommation UNE seule fois de cette enveloppe. Warnings « estimation à valider » actifs sur les 2 champs NULL. Option β validée : 2 nouveaux champs seulement, pas de duplication des 5 `formations_24m_*` morts sur `diagnostics` (cleanup PR séparée post-A). Les champs 24m participants (maturité) restent lus par `ratios-service` sans modification.
+> **Statut : ✅ clos (2026-07-18, option β).**
+> — Collecte : `opco_ep_amount_consumed_current_year` sur `diagnostics` (dirigeant, saisie DANS la synthèse funding ch.2 juste au-dessus des métriques — nuance actée : pas un panneau distinct pré-synthèse, mais un champ intégré au SynthesisFundingStep, persisté par PATCH `/api/diagnostics/[id]/funding-consumption` au clic « Continuer ») + `agefice_amount_consumed_current_year` sur `diagnostic_participants` (fiche indé). Migration `20260718180000`.
+> — Retranchement AGEFICE per-participant **actif** (§9.2 — plafond et champ tous deux par-indé, pas de dérive).
+> — Consommation OPCO EP entreprise **collectée, PAS utilisée dans le calcul** — le cap OPCO EP reste par-participant (bug préexistant vs §3), retrancher `opco_ep_amount_consumed_current_year` per-participant aurait dupliqué le retranchement N fois. Commentaire explicite dans `training-funding.ts` branche salarié. **Refonte au chantier B** : enveloppe entreprise (barème par effectif) + retranchement UNIQUE.
+> — Warnings « estimation à valider » actifs sur les 2 champs NULL.
+> — Option β : 2 nouveaux champs seulement, pas de duplication des 5 `formations_24m_*` morts sur `diagnostics` (cleanup en PR séparée post-B avec le drop des 3 colonnes équivalentes participants — cf. C1).
+
+### Chantier C1 — Unification du modèle participant
+
+> **Statut : ✅ livré (2026-07-18).** Correctif produit, chantier hors PRD initial : élimine la divergence entre `/diagnostics/new`, l'éditeur recommendation et le questionnaire ch.2 (qui n'a en fait aucune question participant). Un seul contrat SQL ↔ Zod ↔ service ↔ UI.
+>
+> — **Nouveaux champs** (migration `20260719120000`) : `formations_current_year_hours` sur `diagnostic_participants` (les 2 statuts, heures utilisées cette année civile), `opco_ep_amount_consumed_current_year` sur `diagnostic_participants` (montant OPCO EP pris en charge pour ce salarié cette année). Le champ salarié est **collecté seulement**, PAS utilisé dans le calcul (même dette OPCO EP que le champ entreprise du chantier A — refonte B).
+>
+> — **CA N-1 réservé aux indés** : filet 3 couches — UI (purge state au bascule salarié + tiret grisé, grille 4 cols stable), API Zod refinement, SQL `CHECK diagnostic_participants_no_n1_for_salarie`. Les 4 valeurs salariés préexistantes ont été purgées (snapshot en scratchpad + SQL de rollback si nécessaire).
+>
+> — **Champs 24m participants (`formations_24m_count/hours/amount`) en sommeil.** UI ne les affiche plus, route Zod les rejette, service ne les SELECT/INSERT plus. Le ratio de consommation `consumptionRatePercent` correspondant est mis en sommeil documentée dans `ratios-service.ts` (label « non estimable — mise en sommeil chantier C1, refonte prévue chantier B »). L'alerte `consumption_rate_below_lever` est désactivée en même temps. Les données déjà en base restent intactes pour les participants non réédités (le comportement DELETE + INSERT du service écrasait déjà à null tout champ non fourni par le caller). **Sort à trancher au chantier B** :
+>   1. remettre en service le ratio consommation sur la fenêtre année civile en cours + enveloppe entreprise partagée (numérateur : `formations_current_year_hours` × tarif horaire ou champ AGEFICE/OPCO EP consommés ; dénominateur : enveloppe entreprise + plafond AGEFICE par indé) ;
+>   2. drop des 3 colonnes `formations_24m_*` participants + retrait de `formations24mAmount` de `RatiosParticipantInput` (blast radius minimal, laissé en place aujourd'hui) ;
+>   3. drop en même temps des 5 colonnes `formations_24m_*` mortes sur `diagnostics` (cf. chantier A).
+>
+> — Types Supabase regénérés + wrapper d'overrides posé (`database.types.generated.ts` + `database.types.overrides.ts` + `database.types.ts`). Les 24 casts `as unknown` / `as never` du chantier A ont été supprimés.
 
 - **But** : basculer la collecte des formations passées de « 24 mois glissants » à « année civile en cours » (§7) et collecter la consommation déjà entamée (§9.1 + §9.2).
 - **Fichiers impactés** :

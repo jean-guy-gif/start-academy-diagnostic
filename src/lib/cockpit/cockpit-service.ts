@@ -62,6 +62,10 @@ interface DiagnosticRow {
    * `null` si jamais calculé.
    */
   alerts_snapshot: unknown;
+  // Chantier A funding-opco-ep §9.1 — consommation OPCO EP annuelle
+  // entreprise, retranchée du plafond côté training-funding avant
+  // plafonnement. NULL = warning « estimation à valider » côté funding.
+  opco_ep_amount_consumed_current_year: number | null;
 }
 
 interface ClientLite {
@@ -89,6 +93,10 @@ interface DiagnosticParticipantRow {
     | "autre"
     | null;
   previous_year_production: number | null;
+  // Chantier A funding-opco-ep §9.2 — retranchement plafond AGEFICE avant
+  // plafonnement pour ce participant (indé). NULL = warning côté funding.
+  agefice_amount_consumed_current_year: number | null;
+  eligible_opco: boolean | null;
 }
 
 interface DateOptionRow {
@@ -163,7 +171,7 @@ export async function getCockpitData(
   const diagnosticsQuery = client
     .from("diagnostics")
     .select(
-      "id, client_id, status, expected_participants, updated_at, alerts_snapshot"
+      "id, client_id, status, expected_participants, updated_at, alerts_snapshot, opco_ep_amount_consumed_current_year"
     )
     .order("updated_at", { ascending: false })
     .limit(200);
@@ -176,7 +184,7 @@ export async function getCockpitData(
   const sessions: SessionRow[] =
     (sessionsRes.data as SessionRow[] | null) ?? [];
   const diagnostics: DiagnosticRow[] =
-    (diagnosticsRes.data as DiagnosticRow[] | null) ?? [];
+    ((diagnosticsRes.data as unknown) as DiagnosticRow[] | null) ?? [];
 
   // Étape 2 — dérivation des IDs pour les jointures aval. Sans dossier
   // en propre (non-admin sans sessions ni diagnostics), on ne charge
@@ -228,7 +236,7 @@ export async function getCockpitData(
       ? client
           .from("diagnostic_participants")
           .select(
-            "diagnostic_id, professional_status, previous_year_production"
+            "diagnostic_id, professional_status, previous_year_production, agefice_amount_consumed_current_year, eligible_opco"
           )
           .in("diagnostic_id", diagIds)
       : empty,
@@ -293,12 +301,23 @@ export async function getCockpitData(
       (participantsBySession.get(p.session_id) ?? 0) + 1
     );
   }
+  // Chantier A funding-opco-ep §9.1 — pour chaque diagnostic, lookup
+  // O(1) de la consommation OPCO EP entreprise déjà entamée (à
+  // retrancher de l'enveloppe salariés côté training-funding).
+  const opcoEpConsumedByDiag = new Map<string, number | null>();
+  for (const d of diagnostics) {
+    opcoEpConsumedByDiag.set(d.id, d.opco_ep_amount_consumed_current_year);
+  }
   const diagParticipantsByDiag = new Map<
     string,
     DiagnosticParticipantRow[]
   >();
-  for (const p of (diagParticipantsRes.data as DiagnosticParticipantRow[] | null) ??
-    []) {
+  // Cast unknown : colonnes `agefice_amount_consumed_current_year` +
+  // `eligible_opco` pas encore dans `database.types.ts` (migration
+  // 20260718180000 en cours).
+  for (const p of ((diagParticipantsRes.data as unknown) as
+    | DiagnosticParticipantRow[]
+    | null) ?? []) {
     const list = diagParticipantsByDiag.get(p.diagnostic_id) ?? [];
     list.push(p);
     diagParticipantsByDiag.set(p.diagnostic_id, list);
@@ -361,6 +380,7 @@ export async function getCockpitData(
       recosByDiag,
       participantsBySession,
       diagParticipantsByDiag,
+      opcoEpConsumedByDiag,
       dateOptionsBySession,
       tokensBySession,
       supportsBySession,
@@ -461,6 +481,7 @@ interface BuildContext {
   recosByDiag: Map<string, RecoRow>;
   participantsBySession: Map<string, number>;
   diagParticipantsByDiag: Map<string, DiagnosticParticipantRow[]>;
+  opcoEpConsumedByDiag: Map<string, number | null>;
   dateOptionsBySession: Map<string, DateOptionRow[]>;
   tokensBySession: Map<string, PublicTokenRow[]>;
   supportsBySession: Map<string, SupportRow>;
@@ -507,9 +528,14 @@ function buildItemFromSession(
         participants: diagParts.map((p) => ({
           professionalStatus: p.professional_status,
           previousYearProduction: p.previous_year_production,
+          eligibleOpco: p.eligible_opco,
+          ageficeAmountConsumedCurrentYear:
+            p.agefice_amount_consumed_current_year,
         })),
         costPerParticipant,
         totalBudget,
+        opcoEpAmountConsumedCurrentYear:
+          ctx.opcoEpConsumedByDiag.get(s.diagnostic_id) ?? null,
       });
       estimatedRemainingCost = summary.estimatedRemainingCost;
     }

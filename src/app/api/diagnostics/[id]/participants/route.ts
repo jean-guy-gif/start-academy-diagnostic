@@ -31,6 +31,15 @@ const ParticipantSchema = z.object({
   formations24mAmount: z.number().nonnegative().nullable().optional(),
   expertLevel: z.enum(["debutant", "confirme", "expert"]).nullable().optional(),
   caAnneeEnCours: z.number().nonnegative().nullable().optional(),
+  // Chantier A funding-opco-ep §9.2 — montant AGEFICE déjà consommé
+  // depuis janvier de l'année civile en cours par ce collaborateur (indé).
+  // Le service `training-funding` retranche cette valeur du plafond AGEFICE
+  // AVANT le calcul du reste à charge.
+  ageficeAmountConsumedCurrentYear: z
+    .number()
+    .nonnegative()
+    .nullable()
+    .optional(),
   wantsEvolution: z.boolean().nullable().optional(),
   wantsTraining: z.boolean().nullable().optional(),
   priorityNeed: z.string().max(500).nullable().optional(),
@@ -126,6 +135,8 @@ export async function PUT(request: Request, context: RouteContext) {
       formations24mAmount: p.formations24mAmount ?? null,
       expertLevel: p.expertLevel ?? null,
       caAnneeEnCours: p.caAnneeEnCours ?? null,
+      ageficeAmountConsumedCurrentYear:
+        p.ageficeAmountConsumedCurrentYear ?? null,
       wantsEvolution: p.wantsEvolution ?? null,
       wantsTraining: p.wantsTraining ?? null,
       priorityNeed: p.priorityNeed ?? null,

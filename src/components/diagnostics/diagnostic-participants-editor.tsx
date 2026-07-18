@@ -47,6 +47,10 @@ interface ParticipantDraft {
   // v1.0 — indé
   expertLevel: "" | "debutant" | "confirme" | "expert";
   caAnneeEnCours: string;
+  // Chantier A funding-opco-ep §9.2 — consommation AGEFICE annuelle du
+  // collaborateur indé. Distincte de `formations24mAmount` (24 mois
+  // maturité, tous financeurs).
+  ageficeAmountConsumedCurrentYear: string;
   wantsEvolution: "" | "oui" | "non";
   wantsTraining: "" | "oui" | "non";
   priorityNeed: string;
@@ -74,6 +78,7 @@ interface ApiParticipant {
   formations24mAmount?: number | null;
   expertLevel?: "debutant" | "confirme" | "expert" | null;
   caAnneeEnCours?: number | null;
+  ageficeAmountConsumedCurrentYear?: number | null;
   wantsEvolution?: boolean | null;
   wantsTraining?: boolean | null;
   priorityNeed?: string | null;
@@ -113,6 +118,7 @@ function emptyDraft(): ParticipantDraft {
     formations24mAmount: "",
     expertLevel: "",
     caAnneeEnCours: "",
+    ageficeAmountConsumedCurrentYear: "",
     wantsEvolution: "",
     wantsTraining: "",
     priorityNeed: "",
@@ -149,6 +155,11 @@ function apiToDraft(p: ApiParticipant): ParticipantDraft {
     caAnneeEnCours:
       p.caAnneeEnCours !== null && p.caAnneeEnCours !== undefined
         ? String(p.caAnneeEnCours)
+        : "",
+    ageficeAmountConsumedCurrentYear:
+      p.ageficeAmountConsumedCurrentYear !== null &&
+      p.ageficeAmountConsumedCurrentYear !== undefined
+        ? String(p.ageficeAmountConsumedCurrentYear)
         : "",
     wantsEvolution: boolToRadio(p.wantsEvolution),
     wantsTraining: boolToRadio(p.wantsTraining),
@@ -271,6 +282,9 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
           formations24mAmount: numOrNull(p.formations24mAmount),
           expertLevel: p.expertLevel || null,
           caAnneeEnCours: numOrNull(p.caAnneeEnCours),
+          ageficeAmountConsumedCurrentYear: numOrNull(
+            p.ageficeAmountConsumedCurrentYear
+          ),
           wantsEvolution: radioToBool(p.wantsEvolution),
           wantsTraining: radioToBool(p.wantsTraining),
           priorityNeed: p.priorityNeed.trim() || null,
@@ -669,6 +683,43 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
                             placeholder="Ex : structurer la prospection…"
                             className="h-9"
                           />
+                        </div>
+                        {/*
+                          Chantier A funding-opco-ep §9.2 — consommation
+                          AGEFICE de l'année civile en cours. Année
+                          dynamique : new Date().getFullYear() (composant
+                          client). Distinct de « formations 24 mois »
+                          ci-dessus qui reste utilisé pour la maturité.
+                        */}
+                        <div className="space-y-1 md:col-span-3">
+                          <Label
+                            htmlFor={`edit-ageficeConsumed-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Montant AGEFICE déjà utilisé par ce
+                            collaborateur depuis janvier{" "}
+                            {new Date().getFullYear()} (€)
+                          </Label>
+                          <Input
+                            id={`edit-ageficeConsumed-${idx}`}
+                            type="number"
+                            min={0}
+                            inputMode="numeric"
+                            value={p.ageficeAmountConsumedCurrentYear}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                ageficeAmountConsumedCurrentYear:
+                                  e.target.value,
+                              })
+                            }
+                            placeholder="Laisser vide si inconnu"
+                            className="h-9"
+                          />
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            Différent des formations passées ci-dessus —
+                            ici c&apos;est le budget AGEFICE déjà
+                            consommé cette année.
+                          </p>
                         </div>
                       </div>
                     </div>

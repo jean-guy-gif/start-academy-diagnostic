@@ -178,6 +178,11 @@ export function NewDiagnosticFlow() {
   const [shownFundingSynthesis, setShownFundingSynthesis] = useState(false);
   const [shownPipelineSynthesis, setShownPipelineSynthesis] = useState(false);
 
+  // Chantier A funding-opco-ep §9.1 — saisie dirigeant chapitre 2
+  // (montant OPCO EP déjà consommé par l'entreprise cette année civile).
+  // String pour supporter le champ vide ; conversion au moment du PATCH.
+  const [opcoEpConsumedInput, setOpcoEpConsumedInput] = useState("");
+
   const [summary, setSummary] = useState<DiagnosticSummary | null>(null);
   const [participants, setParticipants] = useState<DiagnosticParticipantDraft[]>(
     []
@@ -491,8 +496,36 @@ export function NewDiagnosticFlow() {
   // comme vue et reprendre le flow (soit questions suivantes, soit
   // finalisation si on était au bout du questionnaire).
   async function continueFromSynthesis(kind: "funding" | "pipeline") {
-    if (kind === "funding") setShownFundingSynthesis(true);
-    else setShownPipelineSynthesis(true);
+    if (kind === "funding") {
+      setShownFundingSynthesis(true);
+      // Chantier A funding-opco-ep §9.1 — persiste la consommation
+      // OPCO EP entreprise saisie par le dirigeant dans la synthèse
+      // ch.2. Best-effort : un échec réseau n'empêche pas d'avancer
+      // (la valeur est facultative — NULL déclenche « estimation à
+      // valider » côté funding, pas de blocage).
+      if (diagnosticId) {
+        const trimmed = opcoEpConsumedInput.trim();
+        const parsed = trimmed === "" ? null : Number(trimmed);
+        const payloadValue =
+          parsed !== null && Number.isFinite(parsed) && parsed >= 0
+            ? parsed
+            : null;
+        try {
+          await fetch(
+            `/api/diagnostics/${encodeURIComponent(diagnosticId)}/funding-consumption`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                opcoEpAmountConsumedCurrentYear: payloadValue,
+              }),
+            }
+          );
+        } catch {
+          /* best-effort — le champ reste NULL côté DB si l'appel échoue */
+        }
+      }
+    } else setShownPipelineSynthesis(true);
     if (questionIndex >= questions.length) {
       await finishDiagnostic();
     } else {
@@ -623,6 +656,8 @@ export function NewDiagnosticFlow() {
           submitting={submitting}
           onContinue={() => continueFromSynthesis("funding")}
           onSkip={() => continueFromSynthesis("funding")}
+          opcoEpConsumedInput={opcoEpConsumedInput}
+          onOpcoEpConsumedInputChange={setOpcoEpConsumedInput}
         />
       )}
 
@@ -1359,6 +1394,10 @@ interface SynthesisStepProps {
   submitting: boolean;
   onContinue: () => void;
   onSkip: () => void;
+  // Chantier A funding-opco-ep §9.1 — champ dirigeant OPCO EP entreprise
+  // (uniquement branché sur la synthèse funding ch.2, ignoré ailleurs).
+  opcoEpConsumedInput?: string;
+  onOpcoEpConsumedInputChange?: (value: string) => void;
 }
 
 function draftsToAnswers(drafts: Record<string, AnswerDraft>) {
@@ -1504,6 +1543,8 @@ function SynthesisFundingStep({
   submitting,
   onContinue,
   onSkip,
+  opcoEpConsumedInput,
+  onOpcoEpConsumedInputChange,
 }: SynthesisStepProps) {
   const computed = useMemo(() => {
     return computeRatiosAndAlerts({
@@ -1550,6 +1591,39 @@ function SynthesisFundingStep({
       onContinue={onContinue}
       onSkip={onSkip}
     >
+      {/*
+        Chantier A funding-opco-ep §9.1 — question dirigeant chapitre 2,
+        posée avant les métriques de la synthèse. Année dynamique (pas
+        codée en dur). NULL autorisé → warning « estimation à valider »
+        côté funding (cf. training-funding.ts, jamais 0 silencieux).
+      */}
+      {onOpcoEpConsumedInputChange && (
+        <section className="rounded-md border border-border/60 bg-[#eaf5ff]/30 p-3">
+          <Label
+            htmlFor="synth-opcoep-consumed"
+            className="text-sm font-medium text-[#00527a]"
+          >
+            Montant OPCO EP déjà utilisé par votre entreprise depuis
+            janvier {new Date().getFullYear()} (autres formations)
+          </Label>
+          <Input
+            id="synth-opcoep-consumed"
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={opcoEpConsumedInput ?? ""}
+            onChange={(e) => onOpcoEpConsumedInputChange(e.target.value)}
+            placeholder="Laisser vide si inconnu (€)"
+            className="mt-2 h-9"
+          />
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            Sert à calculer ce qu&apos;il reste de votre enveloppe
+            formation salariés. Laissez vide si vous ne savez pas —
+            nous le vérifierons.
+          </p>
+        </section>
+      )}
+
       <section className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-md border border-border/60 bg-muted/10 p-3">
           <p className="text-xs text-muted-foreground">Participants prévisionnels</p>

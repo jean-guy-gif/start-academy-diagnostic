@@ -23,7 +23,6 @@
  */
 
 import {
-  computeConsumptionRate,
   type RuntimeFundingConfig,
 } from "@/lib/pricing/training-funding";
 import { diagnosticQuestions } from "@/lib/data/diagnostic-questions";
@@ -256,29 +255,25 @@ export function computeRatiosAndAlerts(
   ratios.avisParVentePercent = ratioPercent(nbAvis, ventesNMoins1);
   labels.avisParVentePercent = "Avis Google / ventes N-1 (%)";
 
-  // ---- Taux de consommation des droits 24 mois -----------------------------
-  // Correction (6) : l'objet `ConsumptionRateEstimate` renvoie déjà
-  // un `label` préfixé « environ ». On l'expose tel quel sans le
-  // reformatter.
-  const ageficeEligibleCount = input.participants.filter(
-    (p) =>
-      p.professionalStatus === "agent_commercial_independant" &&
-      typeof p.previousYearProduction === "number" &&
-      p.previousYearProduction >
-        (input.fundingConfig?.ageficeThreshold ?? 7000)
-  ).length;
-  const opcoEligibleCount = input.participants.filter(
-    (p) => p.professionalStatus === "salarie" && p.eligibleOpco === true
-  ).length;
-
-  const consumption = computeConsumptionRate({
-    consumed24m: input.participants.map((p) => p.formations24mAmount ?? null),
-    ageficeEligibleCount,
-    opcoEligibleCount,
-    config: input.fundingConfig,
-  });
-  ratios.consumptionRatePercent = consumption.percent;
-  labels.consumptionRatePercent = consumption.label;
+  // ---- Taux de consommation des droits — MISE EN SOMMEIL (chantier C1) -----
+  // Le champ `formations24mAmount` reste dans `RatiosParticipantInput`
+  // (blast radius minimal — retrait au drop des colonnes 24m), mais on
+  // ne l'utilise plus : les 3 champs 24m participants sont en cours de
+  // retrait (l'éditeur ne les écrit plus, la route Zod les rejette).
+  // La sémantique correcte (fenêtre année civile en cours + enveloppe
+  // OPCO EP entreprise partagée) ne peut être reconstruite proprement
+  // qu'au chantier B (barème par effectif + retranchement unique).
+  //
+  // On NE FAIT PAS le calcul via `computeConsumptionRate` : même en
+  // passant `consumed24m: []` la fonction produirait un « environ 0 % »
+  // faux (numérateur=0, dénominateur=mobilizableAmount>0 pour un indé
+  // éligible). L'alerte `consumption_rate_below_lever` est également
+  // désactivée pour la même raison. Le prompt IA lit ce label tel quel
+  // et le classe en « données manquantes », jamais « environ null % »
+  // ni « 0 % faux ».
+  ratios.consumptionRatePercent = null;
+  labels.consumptionRatePercent =
+    "Taux de consommation non estimable (mise en sommeil chantier C1 — refonte prévue chantier B)";
 
   // ==========================================================================
   // Alertes
@@ -500,17 +495,11 @@ export function computeRatiosAndAlerts(
     });
   }
 
-  // Taux de consommation des droits sous levier commercial
-  if (consumption.belowLeverThreshold && consumption.percent !== null) {
-    alerts.push({
-      code: "consumption_rate_below_lever",
-      chapter: 2,
-      label: `${consumption.label} — levier commercial disponible`,
-      severity: "info",
-      observed: consumption.percent,
-      threshold: benchmarks.consumptionLeverPercent,
-    });
-  }
+  // Alerte `consumption_rate_below_lever` — désactivée en même temps
+  // que le ratio de consommation (mise en sommeil chantier C1, refonte
+  // au chantier B). Le seuil `benchmarks.consumptionLeverPercent`
+  // reste défini pour ne pas casser d'autres branches ; la remise en
+  // service se fera avec l'enveloppe entreprise du chantier B.
 
   return {
     ratios: { ratios, labels, computedAt },

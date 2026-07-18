@@ -237,7 +237,19 @@ export function NewDiagnosticFlow() {
     value: DiagnosticParticipantDraft[K]
   ) {
     setParticipants((prev) =>
-      prev.map((p, i) => (i === idx ? { ...p, [key]: value } : p))
+      prev.map((p, i) => {
+        if (i !== idx) return p;
+        const next: DiagnosticParticipantDraft = { ...p, [key]: value };
+        // Chantier C1 — bascule statut vers salarié : purge du CA N-1
+        // (interdit côté SQL par `diagnostic_participants_no_n1_for_
+        // salarie` migration 20260719120000). Sans cette purge, une
+        // saisie faite au moment où le statut était indé/vide serait
+        // envoyée au serveur et rejetée par la contrainte.
+        if (key === "professionalStatus" && value === "salarie") {
+          next.previousYearProduction = "";
+        }
+        return next;
+      })
     );
   }
 
@@ -979,30 +991,49 @@ function ContextStep({
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <Label
-                    htmlFor={`participant-${idx}-production`}
-                    className="text-xs text-muted-foreground"
+                {/*
+                  Chantier C1 — cellule N-1 conditionnelle statut=indé.
+                  Pour un salarié ou un statut vide : tiret grisé, la
+                  grille 4 colonnes reste STABLE (aucun saut de layout
+                  au changement de statut).
+                */}
+                {p.professionalStatus === "agent_commercial_independant" ? (
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`participant-${idx}-production`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Production déclarée N-1 (€)
+                    </Label>
+                    <Input
+                      id={`participant-${idx}-production`}
+                      type="text"
+                      inputMode="numeric"
+                      value={p.previousYearProduction}
+                      onChange={(e) =>
+                        onUpdateParticipant(
+                          idx,
+                          "previousYearProduction",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Ex : 12000"
+                      className="h-9"
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className="space-y-1"
+                    aria-label="Production N-1 (indé uniquement)"
                   >
-                    Production déclarée N-1 (€)
-                  </Label>
-                  <Input
-                    id={`participant-${idx}-production`}
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    value={p.previousYearProduction}
-                    onChange={(e) =>
-                      onUpdateParticipant(
-                        idx,
-                        "previousYearProduction",
-                        e.target.value
-                      )
-                    }
-                    placeholder="Ex : 12000"
-                    className="h-9"
-                  />
-                </div>
+                    <span className="block text-xs text-muted-foreground">
+                      Production N-1 (€)
+                    </span>
+                    <div className="flex h-9 items-center px-1 text-sm text-muted-foreground/60">
+                      —
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label
                     htmlFor={`participant-${idx}-notes`}

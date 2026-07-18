@@ -261,8 +261,19 @@ describe("computeRatiosAndAlerts — correction (4) missing_required_data", () =
   });
 });
 
-describe("computeRatiosAndAlerts — taux consommation « environ »", () => {
-  it("label conserve le préfixe « Environ » quand percent > 0", () => {
+describe("computeRatiosAndAlerts — taux consommation mis en sommeil (C1)", () => {
+  // Chantier C1 — le ratio est mis en sommeil documenté : les 3 champs
+  // `formations_24m_*` ne sont plus alimentés (arrêt d'écriture UI +
+  // Zod). Le service passe désormais `consumed24m: null` systématiquement
+  // à `computeConsumptionRate` (cf. ratios-service.ts commentaire
+  // chantier B). Le prompt IA doit lire le label « estimation
+  // indisponible » et le classer en « données manquantes », JAMAIS
+  // produire un « environ null % ».
+  //
+  // Même en passant `formations24mAmount: 500` côté input (comportement
+  // blast-radius minimal — le champ reste dans le type mais est
+  // ignoré), le résultat doit être « non estimable ».
+  it("label = « non estimable » même quand formations24mAmount fourni (C1 mise en sommeil)", () => {
     const { ratios } = computeRatiosAndAlerts(
       makeInput({
         participants: [
@@ -274,6 +285,8 @@ describe("computeRatiosAndAlerts — taux consommation « environ »", () => {
         ],
       })
     );
-    expect(ratios.labels.consumptionRatePercent).toMatch(/^Environ /);
+    expect(ratios.labels.consumptionRatePercent).toMatch(/non estimable/i);
+    expect(ratios.labels.consumptionRatePercent).not.toMatch(/^Environ /);
+    expect(ratios.ratios.consumptionRatePercent).toBeNull();
   });
 });

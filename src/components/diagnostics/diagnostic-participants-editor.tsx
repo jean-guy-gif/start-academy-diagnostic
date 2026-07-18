@@ -36,20 +36,23 @@ interface ParticipantDraft {
   id: string | null;
   firstName: string;
   professionalStatus: ProfStatus;
+  // CA N-1 : indé uniquement. Contrainte SQL
+  // `diagnostic_participants_no_n1_for_salarie` (migration
+  // 20260719120000) rejette toute écriture N-1 avec statut salarié —
+  // l'UI purge ce champ au changement de statut vers salarié.
   previousYearProduction: string;
   notes: string;
+  // Chantier C1 — heures de formation utilisées cette année civile
+  // par ce collaborateur, les 2 statuts. Nouveau champ.
+  formationsCurrentYearHours: string;
   // v1.0 — champs communs
   lastName: string;
   entryDate: string;
-  formations24mCount: string;
-  formations24mHours: string;
-  formations24mAmount: string;
   // v1.0 — indé
   expertLevel: "" | "debutant" | "confirme" | "expert";
   caAnneeEnCours: string;
   // Chantier A funding-opco-ep §9.2 — consommation AGEFICE annuelle du
-  // collaborateur indé. Distincte de `formations24mAmount` (24 mois
-  // maturité, tous financeurs).
+  // collaborateur indé.
   ageficeAmountConsumedCurrentYear: string;
   wantsEvolution: "" | "oui" | "non";
   wantsTraining: "" | "oui" | "non";
@@ -59,6 +62,11 @@ interface ParticipantDraft {
   contractType: "" | "temps_plein" | "temps_partiel";
   conventionCollective: string;
   eligibleOpco: "" | "oui" | "non";
+  // Chantier C1 — montant OPCO EP pris en charge pour ce salarié
+  // cette année civile. Collecté seulement, PAS utilisé dans le
+  // calcul (même dette que le champ entreprise chantier A ; refonte
+  // enveloppe entreprise + retranchement unique prévue au chantier B).
+  opcoEpAmountConsumedCurrentYear: string;
 }
 
 interface ApiParticipant {
@@ -73,9 +81,10 @@ interface ApiParticipant {
   notes: string | null;
   lastName?: string | null;
   entryDate?: string | null;
-  formations24mCount?: number | null;
-  formations24mHours?: number | null;
-  formations24mAmount?: number | null;
+  // Chantier C1 — nouveaux champs (2 statuts pour les heures, salarié
+  // seulement pour opco_ep_amount_consumed_current_year).
+  formationsCurrentYearHours?: number | null;
+  opcoEpAmountConsumedCurrentYear?: number | null;
   expertLevel?: "debutant" | "confirme" | "expert" | null;
   caAnneeEnCours?: number | null;
   ageficeAmountConsumedCurrentYear?: number | null;
@@ -111,11 +120,9 @@ function emptyDraft(): ParticipantDraft {
     professionalStatus: "",
     previousYearProduction: "",
     notes: "",
+    formationsCurrentYearHours: "",
     lastName: "",
     entryDate: "",
-    formations24mCount: "",
-    formations24mHours: "",
-    formations24mAmount: "",
     expertLevel: "",
     caAnneeEnCours: "",
     ageficeAmountConsumedCurrentYear: "",
@@ -126,6 +133,7 @@ function emptyDraft(): ParticipantDraft {
     contractType: "",
     conventionCollective: "",
     eligibleOpco: "",
+    opcoEpAmountConsumedCurrentYear: "",
   };
 }
 
@@ -139,17 +147,15 @@ function apiToDraft(p: ApiParticipant): ParticipantDraft {
     notes: p.notes ?? "",
     lastName: p.lastName ?? "",
     entryDate: p.entryDate ?? "",
-    formations24mCount:
-      p.formations24mCount !== null && p.formations24mCount !== undefined
-        ? String(p.formations24mCount)
+    formationsCurrentYearHours:
+      p.formationsCurrentYearHours !== null &&
+      p.formationsCurrentYearHours !== undefined
+        ? String(p.formationsCurrentYearHours)
         : "",
-    formations24mHours:
-      p.formations24mHours !== null && p.formations24mHours !== undefined
-        ? String(p.formations24mHours)
-        : "",
-    formations24mAmount:
-      p.formations24mAmount !== null && p.formations24mAmount !== undefined
-        ? String(p.formations24mAmount)
+    opcoEpAmountConsumedCurrentYear:
+      p.opcoEpAmountConsumedCurrentYear !== null &&
+      p.opcoEpAmountConsumedCurrentYear !== undefined
+        ? String(p.opcoEpAmountConsumedCurrentYear)
         : "",
     expertLevel: (p.expertLevel ?? "") as ParticipantDraft["expertLevel"],
     caAnneeEnCours:
@@ -229,6 +235,21 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
       prev.map((p, i) => {
         if (i !== idx) return p;
         const next = { ...p, ...patch };
+        // Chantier C1 — bascule statut vers salarié : purge des champs
+        // qui n'ont plus de sens (CA N-1 rejeté par le CHECK constraint
+        // SQL, CA en cours + AGEFICE consommé sont indé-only). Sans
+        // cette purge, une saisie indé pré-existante partirait au
+        // serveur et se ferait rejeter — ou pire, polluerait la fiche.
+        if (patch.professionalStatus === "salarie") {
+          next.previousYearProduction = "";
+          next.caAnneeEnCours = "";
+          next.ageficeAmountConsumedCurrentYear = "";
+        }
+        // Bascule vers indé : purge symétrique du champ OPCO EP
+        // salarié (nouveau champ chantier C1 salarié-only).
+        if (patch.professionalStatus === "agent_commercial_independant") {
+          next.opcoEpAmountConsumedCurrentYear = "";
+        }
         // v1.0 — auto-pré-remplit la convention collective par défaut la
         // 1re fois que le statut bascule sur « salarié », sans écraser
         // une saisie manuelle existante.
@@ -269,6 +290,10 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
         const n = Number(trimmed);
         return Number.isFinite(n) ? n : null;
       };
+      // Chantier C1 — les 3 champs `formations24m*` NE SONT PLUS
+      // envoyés. Les valeurs déjà en base restent intactes (arrêt
+      // d'écriture uniquement, cleanup / drop des colonnes prévu en
+      // PR séparée). La route Zod les rejette côté serveur.
       const payload = {
         participants: participants.map((p) => ({
           firstName: p.firstName.trim() || null,
@@ -277,9 +302,7 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
           notes: p.notes.trim() || null,
           lastName: p.lastName.trim() || null,
           entryDate: p.entryDate.trim() || null,
-          formations24mCount: numOrNull(p.formations24mCount),
-          formations24mHours: numOrNull(p.formations24mHours),
-          formations24mAmount: numOrNull(p.formations24mAmount),
+          formationsCurrentYearHours: numOrNull(p.formationsCurrentYearHours),
           expertLevel: p.expertLevel || null,
           caAnneeEnCours: numOrNull(p.caAnneeEnCours),
           ageficeAmountConsumedCurrentYear: numOrNull(
@@ -292,6 +315,9 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
           contractType: p.contractType || null,
           conventionCollective: p.conventionCollective.trim() || null,
           eligibleOpco: radioToBool(p.eligibleOpco),
+          opcoEpAmountConsumedCurrentYear: numOrNull(
+            p.opcoEpAmountConsumedCurrentYear
+          ),
         })),
         costPerParticipant: null,
       };
@@ -425,28 +451,47 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-1">
-                    <Label
-                      htmlFor={`edit-production-${idx}`}
-                      className="text-xs text-muted-foreground"
+                  {/*
+                    Chantier C1 — cellule N-1 : champ actif pour un indé
+                    (CA N-1 obligatoire au calcul AGEFICE, seuil 7 000 €),
+                    tiret grisé pour un salarié / statut vide. La grille
+                    reste 4 colonnes STABLE (aucun saut de layout).
+                  */}
+                  {p.professionalStatus === "agent_commercial_independant" ? (
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor={`edit-production-${idx}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Production N-1 (€)
+                      </Label>
+                      <Input
+                        id={`edit-production-${idx}`}
+                        type="text"
+                        inputMode="numeric"
+                        value={p.previousYearProduction}
+                        onChange={(e) =>
+                          updateRow(idx, {
+                            previousYearProduction: e.target.value,
+                          })
+                        }
+                        placeholder="Ex : 12000"
+                        className="h-9"
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className="space-y-1"
+                      aria-label="Production N-1 (indé uniquement)"
                     >
-                      Production N-1 (€)
-                    </Label>
-                    <Input
-                      id={`edit-production-${idx}`}
-                      type="number"
-                      min={0}
-                      inputMode="numeric"
-                      value={p.previousYearProduction}
-                      onChange={(e) =>
-                        updateRow(idx, {
-                          previousYearProduction: e.target.value,
-                        })
-                      }
-                      placeholder="Ex : 12000"
-                      className="h-9"
-                    />
-                  </div>
+                      <span className="block text-xs text-muted-foreground">
+                        Production N-1 (€)
+                      </span>
+                      <div className="flex h-9 items-center px-1 text-sm text-muted-foreground/60">
+                        —
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-1">
                     <Label
                       htmlFor={`edit-notes-${idx}`}
@@ -509,62 +554,31 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
                         className="h-9"
                       />
                     </div>
+                    {/*
+                      Chantier C1 — heures de formation utilisées cette
+                      année civile en cours. Nouveau champ, les 2
+                      statuts (indé et salarié). Année dynamique via
+                      new Date().getFullYear() côté client.
+                    */}
                     <div className="space-y-1">
                       <Label
-                        htmlFor={`edit-f24count-${idx}`}
+                        htmlFor={`edit-formationsCurrentYearHours-${idx}`}
                         className="text-xs text-muted-foreground"
                       >
-                        Formations 24 mois — nombre
+                        Heures formation utilisées depuis janvier{" "}
+                        {new Date().getFullYear()}
                       </Label>
                       <Input
-                        id={`edit-f24count-${idx}`}
-                        type="number"
-                        min={0}
+                        id={`edit-formationsCurrentYearHours-${idx}`}
+                        type="text"
                         inputMode="numeric"
-                        value={p.formations24mCount}
-                        onChange={(e) =>
-                          updateRow(idx, { formations24mCount: e.target.value })
-                        }
-                        className="h-9"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label
-                        htmlFor={`edit-f24hours-${idx}`}
-                        className="text-xs text-muted-foreground"
-                      >
-                        Formations 24 mois — heures cumulées
-                      </Label>
-                      <Input
-                        id={`edit-f24hours-${idx}`}
-                        type="number"
-                        min={0}
-                        inputMode="numeric"
-                        value={p.formations24mHours}
-                        onChange={(e) =>
-                          updateRow(idx, { formations24mHours: e.target.value })
-                        }
-                        className="h-9"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label
-                        htmlFor={`edit-f24amount-${idx}`}
-                        className="text-xs text-muted-foreground"
-                      >
-                        Formations 24 mois — montant consommé (€)
-                      </Label>
-                      <Input
-                        id={`edit-f24amount-${idx}`}
-                        type="number"
-                        min={0}
-                        inputMode="numeric"
-                        value={p.formations24mAmount}
+                        value={p.formationsCurrentYearHours}
                         onChange={(e) =>
                           updateRow(idx, {
-                            formations24mAmount: e.target.value,
+                            formationsCurrentYearHours: e.target.value,
                           })
                         }
+                        placeholder="Laisser vide si inconnu"
                         className="h-9"
                       />
                     </div>
@@ -605,12 +619,11 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
                             htmlFor={`edit-caEnCours-${idx}`}
                             className="text-xs text-muted-foreground"
                           >
-                            CA année en cours (€)
+                            CA année en cours — projection (€)
                           </Label>
                           <Input
                             id={`edit-caEnCours-${idx}`}
-                            type="number"
-                            min={0}
+                            type="text"
                             inputMode="numeric"
                             value={p.caAnneeEnCours}
                             onChange={(e) =>
@@ -702,8 +715,7 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
                           </Label>
                           <Input
                             id={`edit-ageficeConsumed-${idx}`}
-                            type="number"
-                            min={0}
+                            type="text"
                             inputMode="numeric"
                             value={p.ageficeAmountConsumedCurrentYear}
                             onChange={(e) =>
@@ -811,6 +823,43 @@ export function DiagnosticParticipantsEditor({ diagnosticId, compact }: Props) {
                             placeholder={DEFAULT_CONVENTION}
                             className="h-9"
                           />
+                        </div>
+                        {/*
+                          Chantier C1 — montant OPCO EP pris en charge
+                          pour ce salarié cette année civile. Collecté
+                          seulement, PAS utilisé dans le calcul (même
+                          dette que le champ entreprise du chantier A ;
+                          refonte enveloppe entreprise + retranchement
+                          unique prévue au chantier B).
+                        */}
+                        <div className="space-y-1 md:col-span-3">
+                          <Label
+                            htmlFor={`edit-opcoEpConsumed-${idx}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            Montant OPCO EP pris en charge pour ce
+                            collaborateur en {new Date().getFullYear()}{" "}
+                            (€)
+                          </Label>
+                          <Input
+                            id={`edit-opcoEpConsumed-${idx}`}
+                            type="text"
+                            inputMode="numeric"
+                            value={p.opcoEpAmountConsumedCurrentYear}
+                            onChange={(e) =>
+                              updateRow(idx, {
+                                opcoEpAmountConsumedCurrentYear:
+                                  e.target.value,
+                              })
+                            }
+                            placeholder="Laisser vide si inconnu"
+                            className="h-9"
+                          />
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            Formations de ce salarié déjà financées par
+                            l&apos;OPCO cette année. Laisser vide si
+                            inconnu.
+                          </p>
                         </div>
                       </div>
                     </div>

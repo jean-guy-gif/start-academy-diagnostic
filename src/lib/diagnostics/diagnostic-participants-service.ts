@@ -19,15 +19,19 @@ import {
 
 export interface DiagnosticParticipantInput {
   firstName: string | null;
+  // Chantier C1 — CA N-1 (previousYearProduction) réservé aux indés :
+  // le CHECK constraint SQL `diagnostic_participants_no_n1_for_salarie`
+  // (migration 20260719120000) rejette toute écriture non-null pour
+  // un salarié. La route Zod fait le même filet côté API.
   professionalStatus: ParticipantProfessionalStatus | null;
   previousYearProduction: number | null;
   notes: string | null;
   // v1.0 — champs communs (optionnels, saisie partielle autorisée).
   lastName?: string | null;
   entryDate?: string | null;
-  formations24mCount?: number | null;
-  formations24mHours?: number | null;
-  formations24mAmount?: number | null;
+  // Chantier C1 — heures de formation utilisées cette année civile.
+  // Les 2 statuts. Nouveau champ (migration 20260719120000).
+  formationsCurrentYearHours?: number | null;
   // v1.0 — champs indé
   expertLevel?: "debutant" | "confirme" | "expert" | null;
   caAnneeEnCours?: number | null;
@@ -38,15 +42,17 @@ export interface DiagnosticParticipantInput {
   // ce collaborateur (indé) depuis janvier de l'année civile en cours.
   // NULL si non renseigné (le code affiche une alerte « estimation à
   // valider » plutôt que de calculer sur 0 silencieusement).
-  // Distinct de `formations24mAmount` — celui-là couvre 24 mois tous
-  // financements confondus (maturité formation), pas la consommation
-  // AGEFICE spécifique.
   ageficeAmountConsumedCurrentYear?: number | null;
   // v1.0 — champs salarié
   jobTitle?: string | null;
   contractType?: "temps_plein" | "temps_partiel" | null;
   conventionCollective?: string | null;
   eligibleOpco?: boolean | null;
+  // Chantier C1 — montant OPCO EP pris en charge pour ce salarié cette
+  // année civile (nouveau champ, migration 20260719120000). Collecté
+  // seulement, PAS utilisé dans le calcul (même dette que le champ
+  // entreprise du chantier A ; refonte au chantier B).
+  opcoEpAmountConsumedCurrentYear?: number | null;
 }
 
 export interface DiagnosticParticipantRecord
@@ -75,9 +81,9 @@ interface Row {
   // v1.0 — colonnes ajoutées par la migration 20260702100000
   last_name: string | null;
   entry_date: string | null;
-  formations_24m_count: number | null;
-  formations_24m_hours: number | null;
-  formations_24m_amount: number | null;
+  // Chantier C1 — nouveaux champs migration 20260719120000.
+  formations_current_year_hours: number | null;
+  opco_ep_amount_consumed_current_year: number | null;
   expert_level: "debutant" | "confirme" | "expert" | null;
   ca_annee_en_cours: number | null;
   wants_evolution: boolean | null;
@@ -88,6 +94,9 @@ interface Row {
   contract_type: "temps_plein" | "temps_partiel" | null;
   convention_collective: string | null;
   eligible_opco: boolean | null;
+  // NB — les 3 colonnes `formations_24m_*` restent en base (dead
+  // data, drop en PR de cleanup séparée) et sont volontairement
+  // OMISES du SELECT ci-dessous : le code C1 ne les lit plus.
 }
 
 function rowToRecord(row: Row): DiagnosticParticipantRecord {
@@ -105,9 +114,7 @@ function rowToRecord(row: Row): DiagnosticParticipantRecord {
     updatedAt: row.updated_at,
     lastName: row.last_name,
     entryDate: row.entry_date,
-    formations24mCount: row.formations_24m_count,
-    formations24mHours: row.formations_24m_hours,
-    formations24mAmount: row.formations_24m_amount,
+    formationsCurrentYearHours: row.formations_current_year_hours,
     expertLevel: row.expert_level,
     caAnneeEnCours: row.ca_annee_en_cours,
     ageficeAmountConsumedCurrentYear:
@@ -119,6 +126,8 @@ function rowToRecord(row: Row): DiagnosticParticipantRecord {
     contractType: row.contract_type,
     conventionCollective: row.convention_collective,
     eligibleOpco: row.eligible_opco,
+    opcoEpAmountConsumedCurrentYear:
+      row.opco_ep_amount_consumed_current_year,
   };
 }
 
@@ -168,9 +177,12 @@ export async function replaceDiagnosticParticipants(params: {
       notes: p.notes,
       last_name: p.lastName ?? null,
       entry_date: p.entryDate ?? null,
-      formations_24m_count: p.formations24mCount ?? null,
-      formations_24m_hours: p.formations24mHours ?? null,
-      formations_24m_amount: p.formations24mAmount ?? null,
+      // Chantier C1 — 3 colonnes `formations_24m_*` volontairement
+      // OMISES du payload d'INSERT. Le mécanisme DELETE + INSERT du
+      // service écrasait déjà avec null tout champ non fourni ; l'arrêt
+      // d'écriture C1 rend ce comportement explicite. Les colonnes
+      // restent en base jusqu'à la PR de cleanup.
+      formations_current_year_hours: p.formationsCurrentYearHours ?? null,
       expert_level: p.expertLevel ?? null,
       ca_annee_en_cours: p.caAnneeEnCours ?? null,
       agefice_amount_consumed_current_year:
@@ -182,6 +194,8 @@ export async function replaceDiagnosticParticipants(params: {
       contract_type: p.contractType ?? null,
       convention_collective: p.conventionCollective ?? null,
       eligible_opco: p.eligibleOpco ?? null,
+      opco_ep_amount_consumed_current_year:
+        p.opcoEpAmountConsumedCurrentYear ?? null,
     };
   });
 
@@ -195,7 +209,7 @@ export async function replaceDiagnosticParticipants(params: {
     .from("diagnostic_participants")
     .insert(rows as never[])
     .select(
-      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_24m_count, formations_24m_hours, formations_24m_amount, expert_level, ca_annee_en_cours, agefice_amount_consumed_current_year, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco"
+      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_current_year_hours, expert_level, ca_annee_en_cours, agefice_amount_consumed_current_year, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco, opco_ep_amount_consumed_current_year"
     );
   if (error || !data) return [];
   return (data as unknown as Row[]).map(rowToRecord);
@@ -209,7 +223,7 @@ export async function listDiagnosticParticipants(
   const { data, error } = await client
     .from("diagnostic_participants")
     .select(
-      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_24m_count, formations_24m_hours, formations_24m_amount, expert_level, ca_annee_en_cours, agefice_amount_consumed_current_year, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco"
+      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_current_year_hours, expert_level, ca_annee_en_cours, agefice_amount_consumed_current_year, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco, opco_ep_amount_consumed_current_year"
     )
     .eq("diagnostic_id", diagnosticId)
     .order("created_at", { ascending: true });

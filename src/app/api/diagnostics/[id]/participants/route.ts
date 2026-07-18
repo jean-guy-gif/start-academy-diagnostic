@@ -15,39 +15,73 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-const ParticipantSchema = z.object({
-  firstName: z.string().max(80).nullable().optional(),
-  professionalStatus: z
-    .enum(["salarie", "agent_commercial_independant", "autre"])
-    .nullable()
-    .optional(),
-  previousYearProduction: z.number().nonnegative().nullable().optional(),
-  notes: z.string().max(2000).nullable().optional(),
-  // v1.0 — saisie partielle autorisée (tout optionnel + nullable).
-  lastName: z.string().max(80).nullable().optional(),
-  entryDate: z.string().max(40).nullable().optional(),
-  formations24mCount: z.number().int().nonnegative().nullable().optional(),
-  formations24mHours: z.number().nonnegative().nullable().optional(),
-  formations24mAmount: z.number().nonnegative().nullable().optional(),
-  expertLevel: z.enum(["debutant", "confirme", "expert"]).nullable().optional(),
-  caAnneeEnCours: z.number().nonnegative().nullable().optional(),
-  // Chantier A funding-opco-ep §9.2 — montant AGEFICE déjà consommé
-  // depuis janvier de l'année civile en cours par ce collaborateur (indé).
-  // Le service `training-funding` retranche cette valeur du plafond AGEFICE
-  // AVANT le calcul du reste à charge.
-  ageficeAmountConsumedCurrentYear: z
-    .number()
-    .nonnegative()
-    .nullable()
-    .optional(),
-  wantsEvolution: z.boolean().nullable().optional(),
-  wantsTraining: z.boolean().nullable().optional(),
-  priorityNeed: z.string().max(500).nullable().optional(),
-  jobTitle: z.string().max(120).nullable().optional(),
-  contractType: z.enum(["temps_plein", "temps_partiel"]).nullable().optional(),
-  conventionCollective: z.string().max(200).nullable().optional(),
-  eligibleOpco: z.boolean().nullable().optional(),
-});
+const ParticipantSchema = z
+  .object({
+    firstName: z.string().max(80).nullable().optional(),
+    professionalStatus: z
+      .enum(["salarie", "agent_commercial_independant", "autre"])
+      .nullable()
+      .optional(),
+    // CA N-1 : indé uniquement — refinement plus bas rejette toute
+    // valeur non-null quand statut=salarie (le CHECK constraint SQL
+    // `diagnostic_participants_no_n1_for_salarie` fait le même filet
+    // côté base, cf. migration 20260719120000).
+    previousYearProduction: z.number().nonnegative().nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    // v1.0 — saisie partielle autorisée (tout optionnel + nullable).
+    lastName: z.string().max(80).nullable().optional(),
+    entryDate: z.string().max(40).nullable().optional(),
+    // Chantier C1 — heures de formation utilisées cette année civile.
+    // Les 2 statuts. Nouveau champ.
+    formationsCurrentYearHours: z
+      .number()
+      .nonnegative()
+      .nullable()
+      .optional(),
+    expertLevel: z
+      .enum(["debutant", "confirme", "expert"])
+      .nullable()
+      .optional(),
+    caAnneeEnCours: z.number().nonnegative().nullable().optional(),
+    // Chantier A funding-opco-ep §9.2 — montant AGEFICE déjà consommé
+    // depuis janvier de l'année civile en cours par ce collaborateur
+    // (indé). Le service `training-funding` retranche cette valeur du
+    // plafond AGEFICE AVANT le calcul du reste à charge.
+    ageficeAmountConsumedCurrentYear: z
+      .number()
+      .nonnegative()
+      .nullable()
+      .optional(),
+    wantsEvolution: z.boolean().nullable().optional(),
+    wantsTraining: z.boolean().nullable().optional(),
+    priorityNeed: z.string().max(500).nullable().optional(),
+    jobTitle: z.string().max(120).nullable().optional(),
+    contractType: z
+      .enum(["temps_plein", "temps_partiel"])
+      .nullable()
+      .optional(),
+    conventionCollective: z.string().max(200).nullable().optional(),
+    eligibleOpco: z.boolean().nullable().optional(),
+    // Chantier C1 — montant OPCO EP pris en charge pour ce salarié
+    // cette année civile. Collecté seulement, PAS utilisé dans le
+    // calcul (refonte enveloppe entreprise au chantier B).
+    opcoEpAmountConsumedCurrentYear: z
+      .number()
+      .nonnegative()
+      .nullable()
+      .optional(),
+  })
+  .refine(
+    (p) =>
+      p.professionalStatus !== "salarie" ||
+      p.previousYearProduction === null ||
+      p.previousYearProduction === undefined,
+    {
+      message:
+        "Un salarié ne peut pas avoir de production N-1 (champ réservé aux agents commerciaux indépendants).",
+      path: ["previousYearProduction"],
+    }
+  );
 
 const BodySchema = z.object({
   participants: z.array(ParticipantSchema).max(50),
@@ -130,9 +164,13 @@ export async function PUT(request: Request, context: RouteContext) {
       notes: p.notes ?? null,
       lastName: p.lastName ?? null,
       entryDate: p.entryDate ?? null,
-      formations24mCount: p.formations24mCount ?? null,
-      formations24mHours: p.formations24mHours ?? null,
-      formations24mAmount: p.formations24mAmount ?? null,
+      // Chantier C1 — les 3 champs `formations24m*` NE SONT PLUS
+      // reçus (le schema Zod ci-dessus les rejette avec strict-by-
+      // default). Les valeurs déjà en base restent intactes ; le
+      // service `replaceDiagnosticParticipants` ne les écrasera pas
+      // (mapper ne fournit plus la clé). Drop des colonnes prévu en
+      // PR séparée après bascule complète.
+      formationsCurrentYearHours: p.formationsCurrentYearHours ?? null,
       expertLevel: p.expertLevel ?? null,
       caAnneeEnCours: p.caAnneeEnCours ?? null,
       ageficeAmountConsumedCurrentYear:
@@ -144,6 +182,8 @@ export async function PUT(request: Request, context: RouteContext) {
       contractType: p.contractType ?? null,
       conventionCollective: p.conventionCollective ?? null,
       eligibleOpco: p.eligibleOpco ?? null,
+      opcoEpAmountConsumedCurrentYear:
+        p.opcoEpAmountConsumedCurrentYear ?? null,
     })),
     costPerParticipant: parsed.data.costPerParticipant ?? null,
   });

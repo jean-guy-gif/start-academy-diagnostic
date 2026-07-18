@@ -325,6 +325,43 @@ describe("Chantier A — retranchement AGEFICE avant plafonnement", () => {
   });
 });
 
+describe("Chantier C1 — CA N-1 salarié ignoré côté AGEFICE", () => {
+  // Verrouille le contrat unifié : le CA N-1 est un champ INDÉ. La
+  // migration 20260719120000 pose un CHECK constraint qui bloque le
+  // N-1 salarié en base ; côté Zod, un refinement rejette le payload.
+  // Ici on vérifie le module pur `training-funding` — même si un
+  // caller MALICIEUX passe un N-1 pour un salarié, la branche salarié
+  // ne LIT PAS ce champ (elle vit sur `eligibleOpco`). L'AGEFICE reste
+  // à 0 €, aucun contournement possible.
+  it("salarié avec previousYearProduction=40000 → 0 € AGEFICE, jamais éligible via ce champ", () => {
+    const est = estimateParticipantFunding({
+      professionalStatus: "salarie",
+      previousYearProduction: 40_000, // valeur ABERRANTE pour un salarié
+      eligibleOpco: null, // pas éligible OPCO EP
+      costPerParticipant: 4_200,
+    });
+    // Aucun financement : ni AGEFICE (branche salarié), ni OPCO EP
+    // (non éligible). Reste à charge = coût entier.
+    expect(est.estimatedFundingAmount).toBe(0);
+    expect(est.eligibility).toBe("unknown");
+    expect(est.estimatedRemainingCost).toBe(4_200);
+  });
+
+  it("salarié avec previousYearProduction=40000 ET eligibleOpco=true → funding = plafond OPCO EP (pas AGEFICE)", () => {
+    const est = estimateParticipantFunding({
+      professionalStatus: "salarie",
+      previousYearProduction: 40_000,
+      eligibleOpco: true,
+      costPerParticipant: 4_200,
+    });
+    // Financement via la branche salarié OPCO EP (plafond 2 500) —
+    // JAMAIS via l'AGEFICE (le seuil 7 000 € n'est pas testé pour un
+    // salarié).
+    expect(est.estimatedFundingAmount).toBe(OPCO_EP_ANNUAL_CAP_DEFAULT);
+    expect(est.eligibility).toBe("potentially_eligible");
+  });
+});
+
 // Chantier A — PAS de retranchement OPCO EP par-participant.
 // Le champ opcoEpAmountConsumedCurrentYear est collecté mais PAS
 // utilisé dans le calcul en A (retranchement N fois par N salariés

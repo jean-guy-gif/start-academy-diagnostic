@@ -15,18 +15,31 @@ export interface FundingConfig {
   ageficeAnnualCap: number;
   opcoEpAnnualCap: number;
   consumptionLeverPercent: number;
+  /**
+   * Tarif horaire par participant, tout compris (ingénierie, montage
+   * administratif intégral, 2 formateurs, déplacement, outils, zéro
+   * avance de trésorerie). Seedé par la migration
+   * `20260717120000_add_price_per_hour_seed.sql`.
+   */
+  pricePerHourPerParticipant: number;
 }
 
 /**
  * Défauts alignés avec les constantes de `training-funding.ts` (v1.0
  * du référentiel). Utilisés en fallback lorsque `funding_config` est
  * inaccessible OU quand la clé n'a pas de ligne active.
+ *
+ * ⚠️ `pricePerHourPerParticipant` DOIT rester aligné sur la valeur du
+ * seed `PRICE_PER_HOUR_PER_PARTICIPANT` de la migration
+ * `20260717120000_add_price_per_hour_seed.sql`. Un test de contrat
+ * verrouille l'invariant (fail-si-divergence, pattern F-1).
  */
 export const DEFAULT_FUNDING_CONFIG: FundingConfig = {
   ageficeThreshold: 7000,
   ageficeAnnualCap: 3000,
   opcoEpAnnualCap: 2500,
   consumptionLeverPercent: 30,
+  pricePerHourPerParticipant: 84,
 };
 
 type ConfigRow = {
@@ -75,6 +88,9 @@ export async function getActiveFundingConfig(): Promise<FundingConfig> {
       consumptionLeverPercent:
         byKey.get("CONSUMPTION_LEVER_PERCENT") ??
         DEFAULT_FUNDING_CONFIG.consumptionLeverPercent,
+      pricePerHourPerParticipant:
+        byKey.get("PRICE_PER_HOUR_PER_PARTICIPANT") ??
+        DEFAULT_FUNDING_CONFIG.pricePerHourPerParticipant,
     };
   } catch {
     return { ...DEFAULT_FUNDING_CONFIG };

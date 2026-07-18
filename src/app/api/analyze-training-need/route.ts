@@ -241,7 +241,8 @@ async function loadFromSupabase(
 
 async function persistRecommendation(
   diagnosticId: string,
-  result: AnalyzeResult
+  result: AnalyzeResult,
+  pricePerHourPerParticipant: number
 ): Promise<{
   persisted: boolean;
   recommendationId: string | null;
@@ -265,10 +266,13 @@ async function persistRecommendation(
         skill_level: rec.skillLevel,
         required_foundations: rec.requiredFoundations,
         total_duration_hours: rec.totalDurationHours,
-        // Règle Start Academy : 1 h = 42 € / participant. Calcul code-only,
-        // peu importe ce que le LLM a mis dans `costPerParticipant`.
+        // Règle Start Academy : `pricePerHourPerParticipant` € HT par
+        // heure et par participant, tout compris (funding_config, seed
+        // PRICE_PER_HOUR_PER_PARTICIPANT). Calcul code-only, peu
+        // importe ce que le LLM a mis dans `costPerParticipant`.
         cost_per_participant: calculateCostPerParticipant(
-          rec.totalDurationHours
+          rec.totalDurationHours,
+          pricePerHourPerParticipant
         ),
         confidence_score: rec.confidenceScore,
         missing_information: rec.missingInformation,
@@ -572,9 +576,15 @@ export async function POST(request: Request) {
   }
 
   // 4. Persistance Supabase si admin dispo.
+  //    Le tarif horaire est lu depuis `funding_config` (seed
+  //    PRICE_PER_HOUR_PER_PARTICIPANT). `getActiveFundingConfig()` est
+  //    best-effort et retombe silencieusement sur `DEFAULT_FUNDING_CONFIG`
+  //    en cas d'indisponibilité Supabase — jamais de throw.
+  const fundingConfigForPricing = await getActiveFundingConfig();
   const persistence = await persistRecommendation(
     parsed.data.diagnosticId,
-    result
+    result,
+    fundingConfigForPricing.pricePerHourPerParticipant
   );
 
   // 4.bis Monitoring IA — best-effort, ne bloque jamais la réponse.

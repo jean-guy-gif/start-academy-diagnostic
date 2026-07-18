@@ -236,7 +236,7 @@ export function SessionDetailView({ sessionId }: Props) {
           }
         />
         <Stat
-          label="Budget estimé (1 h = 42 €/pers.)"
+          label="Budget estimé (tarif Start Academy, tout compris)"
           value={
             session.totalEstimatedCost !== null
               ? formatPriceEuros(session.totalEstimatedCost)

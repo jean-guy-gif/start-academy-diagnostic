@@ -21,7 +21,7 @@ import type {
   TrainingSessionViewModel,
 } from "@/types";
 import {
-  getCachedProposalByDiagnosticId,
+  getProposalByDiagnosticId,
   type StoredProposal,
 } from "@/lib/proposals/proposal-service";
 import { logActivityFromClient } from "@/lib/activity/log-from-client";
@@ -198,7 +198,7 @@ async function loadProposalForDiagnostic(
   diagnosticId: string | null
 ): Promise<StoredProposal | null> {
   if (!diagnosticId) return null;
-  const cached = await getCachedProposalByDiagnosticId(diagnosticId);
+  const cached = await getProposalByDiagnosticId(diagnosticId);
   return cached.data;
 }
 

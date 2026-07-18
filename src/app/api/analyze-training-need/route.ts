@@ -127,6 +127,12 @@ interface LoadResult {
   ratiosDiagnostic: RatiosDiagnosticInput | null;
   ratiosParticipants: RatiosParticipantInput[];
   fundingParticipants: ParticipantFundingInput[];
+  /**
+   * Chantier A funding-opco-ep §9.1 — montant OPCO EP déjà consommé
+   * par l'entreprise cette année civile, lu sur `diagnostics`. NULL si
+   * non renseigné.
+   */
+  opcoEpAmountConsumedCurrentYear: number | null;
 }
 
 async function loadFromSupabase(
@@ -158,7 +164,7 @@ async function loadFromSupabase(
     const { data: participantRows } = await client
       .from("diagnostic_participants")
       .select(
-        "professional_status, previous_year_production, eligible_opco, formations_24m_amount"
+        "professional_status, previous_year_production, eligible_opco, formations_24m_amount, agefice_amount_consumed_current_year"
       )
       .eq("diagnostic_id", diagnosticId);
 
@@ -175,27 +181,62 @@ async function loadFromSupabase(
           : null,
     };
 
-    const ratiosParticipants: RatiosParticipantInput[] = (
-      participantRows ?? []
-    ).map((p) => ({
-      professionalStatus: p.professional_status,
-      previousYearProduction: p.previous_year_production,
-      eligibleOpco: p.eligible_opco,
-      formations24mAmount: p.formations_24m_amount,
-    }));
+    // Cast local : la colonne `agefice_amount_consumed_current_year`
+    // n'est pas encore présente dans database.types.ts (types re-générés
+    // post migration `20260718180000_add_current_year_consumption`). On
+    // caste le résultat du SELECT en un shape connu — le mapping ci-dessous
+    // gère les null.
+    const typedParticipantRows = (participantRows ?? []) as unknown as Array<{
+      professional_status:
+        | "salarie"
+        | "agent_commercial_independant"
+        | "autre"
+        | null;
+      previous_year_production: number | null;
+      eligible_opco: boolean | null;
+      formations_24m_amount: number | null;
+      agefice_amount_consumed_current_year: number | null;
+    }>;
 
-    const fundingParticipants: ParticipantFundingInput[] = (
-      participantRows ?? []
-    ).map((p) => ({
-      professionalStatus: p.professional_status,
-      previousYearProduction: p.previous_year_production,
-      eligibleOpco: p.eligible_opco,
-    }));
+    const ratiosParticipants: RatiosParticipantInput[] = typedParticipantRows.map(
+      (p) => ({
+        professionalStatus: p.professional_status,
+        previousYearProduction: p.previous_year_production,
+        eligibleOpco: p.eligible_opco,
+        formations24mAmount: p.formations_24m_amount,
+      })
+    );
+
+    const fundingParticipants: ParticipantFundingInput[] =
+      typedParticipantRows.map((p) => ({
+        professionalStatus: p.professional_status,
+        previousYearProduction: p.previous_year_production,
+        eligibleOpco: p.eligible_opco,
+        // Chantier A funding-opco-ep §9.2 — montant AGEFICE déjà consommé
+        // par cet indé cette année civile, à retrancher de son plafond
+        // AVANT le calcul du reste à charge (cf. `training-funding.ts`).
+        // NULL si non renseigné → alerte « estimation à valider » côté UI,
+        // jamais de calcul silencieux sur 0.
+        ageficeAmountConsumedCurrentYear:
+          p.agefice_amount_consumed_current_year ?? null,
+      }));
+
+    // Cast local : `opco_ep_amount_consumed_current_year` n'est pas encore
+    // présent dans database.types.ts (migration
+    // `20260718180000_add_current_year_consumption` en cours). Cf. pattern
+    // proposals/participants — cast levé quand types re-générés post db pull.
+    const opcoEpAmountConsumedCurrentYear =
+      (
+        diagRow as unknown as {
+          opco_ep_amount_consumed_current_year: number | null;
+        }
+      ).opco_ep_amount_consumed_current_year ?? null;
 
     return {
       ratiosDiagnostic,
       ratiosParticipants,
       fundingParticipants,
+      opcoEpAmountConsumedCurrentYear,
       diagnostic: {
         id: diagRow.id,
         clientId: diagRow.client_id,
@@ -402,6 +443,7 @@ export async function POST(request: Request) {
           ratiosDiagnostic: null,
           ratiosParticipants: [],
           fundingParticipants: [],
+          opcoEpAmountConsumedCurrentYear: null,
         }
       : null;
   const loaded = fromSupabase ?? inline;
@@ -461,6 +503,7 @@ export async function POST(request: Request) {
       costPerParticipant: null,
       totalBudget: null,
       config: fundingConfig,
+      opcoEpAmountConsumedCurrentYear: loaded.opcoEpAmountConsumedCurrentYear,
     });
   }
 

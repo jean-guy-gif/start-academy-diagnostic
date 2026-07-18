@@ -34,6 +34,14 @@ export interface DiagnosticParticipantInput {
   wantsEvolution?: boolean | null;
   wantsTraining?: boolean | null;
   priorityNeed?: string | null;
+  // Chantier A funding-opco-ep §9.2 — montant AGEFICE déjà consommé par
+  // ce collaborateur (indé) depuis janvier de l'année civile en cours.
+  // NULL si non renseigné (le code affiche une alerte « estimation à
+  // valider » plutôt que de calculer sur 0 silencieusement).
+  // Distinct de `formations24mAmount` — celui-là couvre 24 mois tous
+  // financements confondus (maturité formation), pas la consommation
+  // AGEFICE spécifique.
+  ageficeAmountConsumedCurrentYear?: number | null;
   // v1.0 — champs salarié
   jobTitle?: string | null;
   contractType?: "temps_plein" | "temps_partiel" | null;
@@ -75,6 +83,7 @@ interface Row {
   wants_evolution: boolean | null;
   wants_training: boolean | null;
   priority_need: string | null;
+  agefice_amount_consumed_current_year: number | null;
   job_title: string | null;
   contract_type: "temps_plein" | "temps_partiel" | null;
   convention_collective: string | null;
@@ -101,6 +110,8 @@ function rowToRecord(row: Row): DiagnosticParticipantRecord {
     formations24mAmount: row.formations_24m_amount,
     expertLevel: row.expert_level,
     caAnneeEnCours: row.ca_annee_en_cours,
+    ageficeAmountConsumedCurrentYear:
+      row.agefice_amount_consumed_current_year,
     wantsEvolution: row.wants_evolution,
     wantsTraining: row.wants_training,
     priorityNeed: row.priority_need,
@@ -162,6 +173,8 @@ export async function replaceDiagnosticParticipants(params: {
       formations_24m_amount: p.formations24mAmount ?? null,
       expert_level: p.expertLevel ?? null,
       ca_annee_en_cours: p.caAnneeEnCours ?? null,
+      agefice_amount_consumed_current_year:
+        p.ageficeAmountConsumedCurrentYear ?? null,
       wants_evolution: p.wantsEvolution ?? null,
       wants_training: p.wantsTraining ?? null,
       priority_need: p.priorityNeed ?? null,
@@ -172,14 +185,20 @@ export async function replaceDiagnosticParticipants(params: {
     };
   });
 
+  // Cast `as never[]` : la colonne `agefice_amount_consumed_current_year`
+  // n'est pas encore dans `database.types.ts` (types re-générés post
+  // migration). Le shape est validé par la migration
+  // `20260718180000_add_current_year_consumption.sql` et par les tests
+  // unitaires du service. Cast localisé, pattern identique à la PR
+  // proposals-persistence.
   const { data, error } = await client
     .from("diagnostic_participants")
-    .insert(rows)
+    .insert(rows as never[])
     .select(
-      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_24m_count, formations_24m_hours, formations_24m_amount, expert_level, ca_annee_en_cours, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco"
+      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_24m_count, formations_24m_hours, formations_24m_amount, expert_level, ca_annee_en_cours, agefice_amount_consumed_current_year, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco"
     );
   if (error || !data) return [];
-  return (data as Row[]).map(rowToRecord);
+  return (data as unknown as Row[]).map(rowToRecord);
 }
 
 export async function listDiagnosticParticipants(
@@ -190,10 +209,10 @@ export async function listDiagnosticParticipants(
   const { data, error } = await client
     .from("diagnostic_participants")
     .select(
-      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_24m_count, formations_24m_hours, formations_24m_amount, expert_level, ca_annee_en_cours, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco"
+      "id, diagnostic_id, first_name, professional_status, previous_year_production, funding_eligibility, estimated_funding_amount, estimated_remaining_cost, notes, created_at, updated_at, last_name, entry_date, formations_24m_count, formations_24m_hours, formations_24m_amount, expert_level, ca_annee_en_cours, agefice_amount_consumed_current_year, wants_evolution, wants_training, priority_need, job_title, contract_type, convention_collective, eligible_opco"
     )
     .eq("diagnostic_id", diagnosticId)
     .order("created_at", { ascending: true });
   if (error || !data) return [];
-  return (data as Row[]).map(rowToRecord);
+  return (data as unknown as Row[]).map(rowToRecord);
 }

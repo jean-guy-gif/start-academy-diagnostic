@@ -485,14 +485,33 @@ async function loadDirigeantView(
     const diagParticipants = await listDiagnosticParticipants(
       session.diagnostic_id
     );
+    // Chantier A funding-opco-ep §9.1 — consommation OPCO EP annuelle
+    // entreprise (à retrancher du plafond salariés côté funding). Cast
+    // local : colonne pas encore dans `database.types.ts` (migration
+    // 20260718180000 en cours).
+    const { data: diagFundingRow } = await client
+      .from("diagnostics")
+      .select("opco_ep_amount_consumed_current_year")
+      .eq("id", session.diagnostic_id)
+      .maybeSingle();
+    const opcoEpAmountConsumedCurrentYear =
+      (
+        diagFundingRow as unknown as {
+          opco_ep_amount_consumed_current_year: number | null;
+        } | null
+      )?.opco_ep_amount_consumed_current_year ?? null;
     if (diagParticipants.length > 0 && costPerParticipant !== null) {
       const summary = estimateTrainingFunding({
         participants: diagParticipants.map((p) => ({
           professionalStatus: p.professionalStatus,
           previousYearProduction: p.previousYearProduction,
+          eligibleOpco: p.eligibleOpco,
+          ageficeAmountConsumedCurrentYear:
+            p.ageficeAmountConsumedCurrentYear ?? null,
         })),
         costPerParticipant,
         totalBudget: totalEstimatedCost,
+        opcoEpAmountConsumedCurrentYear,
       });
       // On expose UNIQUEMENT les agrégats — JAMAIS les détails
       // individuels (cf. consigne produit : synthèse anonymisée).

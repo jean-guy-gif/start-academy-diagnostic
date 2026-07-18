@@ -87,6 +87,20 @@ export interface EstimateParticipantFundingParams {
   costPerParticipant: number | null;
   /** v1.0 : salarié éligible OPCO ? Défaut : inconnu → route salarié classique. */
   eligibleOpco?: boolean | null;
+  /**
+   * Chantier A funding-opco-ep §9.2 — montant AGEFICE déjà consommé par
+   * ce collaborateur (indé) cette année civile. Retranché du plafond
+   * `ageficeAnnualCap` AVANT plafonnement du coût par participant. NULL
+   * = non renseigné → warning « estimation à valider » remonté par le
+   * summary, JAMAIS de calcul sur 0 silencieux.
+   *
+   * Note : ce retranchement est mathématiquement correct en A car le
+   * plafond AGEFICE est PAR indé (3 000 €/an/pers.) et le champ est
+   * PAR indé. Contrairement à OPCO EP (enveloppe entreprise
+   * partagée — cf. branche salarié plus bas), il n'y a pas de
+   * duplication du retranchement à corriger en B.
+   */
+  ageficeAmountConsumedCurrentYear?: number | null;
   /** v1.0 : override du référentiel `funding_config` en base. */
   config?: RuntimeFundingConfig;
 }
@@ -110,6 +124,7 @@ export function estimateParticipantFunding(
     previousYearProduction,
     costPerParticipant,
     eligibleOpco,
+    ageficeAmountConsumedCurrentYear,
     config,
   } = params;
   const {
@@ -117,6 +132,15 @@ export function estimateParticipantFunding(
     ageficeAnnualCap,
     opcoEpAnnualCap,
   } = resolveConfig(config);
+
+  // Chantier A funding-opco-ep §5.2 — retranchement AGEFICE AVANT
+  // plafonnement (plafond PAR indé, champ PAR indé — pas de dérive).
+  // NULL = « inconnu, à valider » — le summary remonte un warning
+  // (cf. `estimateTrainingFunding`), jamais 0 silencieux.
+  const ageficeEnvelopeAvailable = Math.max(
+    0,
+    ageficeAnnualCap - (ageficeAmountConsumedCurrentYear ?? 0)
+  );
 
   // Sans coût par participant on ne peut rien borner : on retourne 0.
   if (costPerParticipant === null || costPerParticipant <= 0) {
@@ -133,7 +157,9 @@ export function estimateParticipantFunding(
       typeof previousYearProduction === "number" &&
       previousYearProduction > ageficeThreshold
     ) {
-      const cap = Math.min(costPerParticipant, ageficeAnnualCap);
+      // Enveloppe AGEFICE retranchée du montant déjà consommé cette
+      // année civile (§9.2 PRD).
+      const cap = Math.min(costPerParticipant, ageficeEnvelopeAvailable);
       const estimatedFundingAmount = roundEuro(cap);
       const estimatedRemainingCost = roundEuro(
         Math.max(costPerParticipant - estimatedFundingAmount, 0)
@@ -162,6 +188,24 @@ export function estimateParticipantFunding(
 
   if (professionalStatus === "salarie") {
     if (eligibleOpco === true) {
+      // OPCO EP: cap par-participant = comportement HEAD, INCORRECT vs
+      // PRD §3 (enveloppe entreprise globale). Refonte au chantier B.
+      // Le champ opcoEpAmountConsumedCurrentYear est collecté mais PAS
+      // utilisé ici — B fera le vrai calcul.
+      //
+      // Détail du bug préexistant : `opcoEpAnnualCap` est un plafond
+      // par-personne (2 500 €), alors que le PRD dit que l'OPCO EP est
+      // une enveloppe entreprise partagée (2 500 € total, barème par
+      // effectif < 11 / 11-50 / > 50). Résultat actuel : le funding
+      // OPCO EP est multiplié par le nombre de salariés éligibles
+      // (surestimation historique). Le chantier A a délibérément choisi
+      // de NE PAS retrancher `opcoEpAmountConsumedCurrentYear` ici pour
+      // ne pas figer un chiffre différent et faux (retranchement
+      // dupliqué N fois par N salariés). Le chantier B devra à la fois :
+      //   1. remplacer ce cap par-personne par un calcul enveloppe
+      //      entreprise (barème par effectif),
+      //   2. retrancher `opcoEpAmountConsumedCurrentYear` UNE SEULE fois
+      //      de cette enveloppe globale.
       const cap = Math.min(costPerParticipant, opcoEpAnnualCap);
       const estimatedFundingAmount = roundEuro(cap);
       const estimatedRemainingCost = roundEuro(
@@ -204,6 +248,14 @@ export interface TrainingFundingSummary {
   eligibleParticipantCount: number;
   totalParticipantCount: number;
   disclaimer: string;
+  /**
+   * Chantier A funding-opco-ep §9.3 — warnings « estimation à valider »
+   * quand un champ de consommation entamée est NULL. Le calcul est
+   * effectué (avec 0 en retranchement) mais l'appelant DOIT afficher
+   * ces warnings au dirigeant / commercial pour prévenir que
+   * l'enveloppe pourrait être plus faible en réalité.
+   */
+  fundingWarnings: string[];
 }
 
 export interface ParticipantFundingInput {
@@ -211,6 +263,11 @@ export interface ParticipantFundingInput {
   previousYearProduction: number | null;
   /** v1.0 : salarié éligible OPCO ? Optionnel, rétro-compat. */
   eligibleOpco?: boolean | null;
+  /**
+   * Chantier A funding-opco-ep §9.2 — montant AGEFICE déjà consommé
+   * par cet indé cette année civile. NULL = non renseigné → warning.
+   */
+  ageficeAmountConsumedCurrentYear?: number | null;
 }
 
 /**
@@ -226,21 +283,75 @@ export function estimateTrainingFunding(params: {
   costPerParticipant: number | null;
   totalBudget: number | null;
   config?: RuntimeFundingConfig;
+  /**
+   * Chantier A funding-opco-ep §9.1 — montant OPCO EP déjà consommé
+   * PAR L'ENTREPRISE cette année civile. Retranché de l'enveloppe
+   * OPCO EP dans chaque estimation salariée. NULL = non renseigné →
+   * warning « estimation à valider ».
+   */
+  opcoEpAmountConsumedCurrentYear?: number | null;
 }): TrainingFundingSummary {
-  const { participants, costPerParticipant, totalBudget, config } = params;
+  const {
+    participants,
+    costPerParticipant,
+    totalBudget,
+    config,
+    opcoEpAmountConsumedCurrentYear,
+  } = params;
   let estimatedFundingTotal = 0;
   let eligibleCount = 0;
+  const fundingWarnings: string[] = [];
+  let indepsMissingAgeficeConsumption = 0;
+  let hasSalarieOpcoEpTouched = false;
 
   for (const p of participants) {
+    // Trace des indés éligibles qui n'ont pas renseigné leur AGEFICE
+    // consommé cette année — pour warning consolidé côté summary.
+    if (
+      p.professionalStatus === "agent_commercial_independant" &&
+      (p.ageficeAmountConsumedCurrentYear === null ||
+        p.ageficeAmountConsumedCurrentYear === undefined)
+    ) {
+      indepsMissingAgeficeConsumption += 1;
+    }
+    if (p.professionalStatus === "salarie" && p.eligibleOpco === true) {
+      hasSalarieOpcoEpTouched = true;
+    }
+
+    // Chantier A : `opcoEpAmountConsumedCurrentYear` est volontairement
+    // NON transmis à `estimateParticipantFunding` — il n'est utilisé
+    // que pour émettre le warning ci-dessous. Le calcul OPCO EP sera
+    // refondu au chantier B (cf. commentaire branche salarié).
     const est = estimateParticipantFunding({
       professionalStatus: p.professionalStatus,
       previousYearProduction: p.previousYearProduction,
       eligibleOpco: p.eligibleOpco ?? null,
+      ageficeAmountConsumedCurrentYear:
+        p.ageficeAmountConsumedCurrentYear ?? null,
       costPerParticipant,
       config,
     });
     estimatedFundingTotal += est.estimatedFundingAmount;
     if (est.eligibility === "potentially_eligible") eligibleCount += 1;
+  }
+
+  if (indepsMissingAgeficeConsumption > 0) {
+    fundingWarnings.push(
+      `Consommation AGEFICE non renseignée pour ${indepsMissingAgeficeConsumption} collaborateur${
+        indepsMissingAgeficeConsumption > 1 ? "s" : ""
+      } indépendant${
+        indepsMissingAgeficeConsumption > 1 ? "s" : ""
+      } — enveloppe individuelle affichée = maximum théorique, à vérifier avant engagement.`
+    );
+  }
+  if (
+    hasSalarieOpcoEpTouched &&
+    (opcoEpAmountConsumedCurrentYear === null ||
+      opcoEpAmountConsumedCurrentYear === undefined)
+  ) {
+    fundingWarnings.push(
+      "Consommation OPCO EP de l'entreprise non renseignée — enveloppe affichée = maximum théorique, à vérifier avant engagement."
+    );
   }
 
   estimatedFundingTotal = roundEuro(estimatedFundingTotal);
@@ -256,6 +367,7 @@ export function estimateTrainingFunding(params: {
     eligibleParticipantCount: eligibleCount,
     totalParticipantCount: participants.length,
     disclaimer: FUNDING_DISCLAIMER,
+    fundingWarnings,
   };
 }
 

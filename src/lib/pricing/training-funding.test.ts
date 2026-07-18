@@ -293,3 +293,119 @@ describe("computeConsumptionRate — correction (6) « environ »", () => {
     expect(Number.isFinite(est.percent as number)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Chantier A funding-opco-ep — consommation déjà entamée cette année civile
+// ---------------------------------------------------------------------------
+
+describe("Chantier A — retranchement AGEFICE avant plafonnement", () => {
+  it("indé éligible : plafond 3 000 € − 1 500 € consommé → funding = 1 500 €", () => {
+    const est = estimateParticipantFunding({
+      professionalStatus: "agent_commercial_independant",
+      previousYearProduction: 15_000,
+      costPerParticipant: 4_200,
+      ageficeAmountConsumedCurrentYear: 1_500,
+    });
+    expect(est.eligibility).toBe("potentially_eligible");
+    // min(costPerParticipant, cap − consommé) = min(4200, 3000 − 1500) = 1500
+    expect(est.estimatedFundingAmount).toBe(1_500);
+    expect(est.estimatedRemainingCost).toBe(4_200 - 1_500);
+  });
+
+  it("indé éligible : consommé ≥ plafond → funding = 0 (jamais négatif)", () => {
+    const est = estimateParticipantFunding({
+      professionalStatus: "agent_commercial_independant",
+      previousYearProduction: 15_000,
+      costPerParticipant: 4_200,
+      ageficeAmountConsumedCurrentYear:
+        MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT + 500,
+    });
+    expect(est.estimatedFundingAmount).toBe(0);
+    expect(est.estimatedRemainingCost).toBe(4_200);
+  });
+});
+
+// Chantier A — PAS de retranchement OPCO EP par-participant.
+// Le champ opcoEpAmountConsumedCurrentYear est collecté mais PAS
+// utilisé dans le calcul en A (retranchement N fois par N salariés
+// aurait produit un chiffre différent et faux). Refonte enveloppe
+// entreprise partagée au chantier B (cf. commentaire training-funding.ts
+// branche salarié). Le test `estimateOpcoBudget: 2 × 2500 = 5000` plus
+// bas verrouille le comportement HEAD conservé.
+
+describe("Chantier A — warnings quand consommation NULL", () => {
+  it("indé sans ageficeAmountConsumedCurrentYear → warning consolidé", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: 20_000,
+      participants: [
+        {
+          professionalStatus: "agent_commercial_independant",
+          previousYearProduction: 15_000,
+          // ageficeAmountConsumedCurrentYear non renseigné → NULL
+        },
+      ],
+    });
+    expect(summary.fundingWarnings).toEqual([
+      expect.stringMatching(/Consommation AGEFICE non renseignée/),
+    ]);
+    // Alert-when-NULL : jamais de calcul silencieux sur 0. L'estimation
+    // reste au maximum théorique (plafond entier), warning en tête.
+    expect(summary.estimatedFundingTotal).toBe(
+      MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT
+    );
+  });
+
+  it("salarié OPCO touché + opcoEpAmountConsumedCurrentYear NULL → warning", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: [
+        {
+          professionalStatus: "salarie",
+          previousYearProduction: null,
+          eligibleOpco: true,
+        },
+      ],
+      // opcoEpAmountConsumedCurrentYear volontairement non passé
+    });
+    expect(summary.fundingWarnings).toEqual([
+      expect.stringMatching(/Consommation OPCO EP de l'entreprise non renseignée/),
+    ]);
+  });
+
+  it("indé avec ageficeAmountConsumedCurrentYear renseigné → PAS de warning AGEFICE", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: [
+        {
+          professionalStatus: "agent_commercial_independant",
+          previousYearProduction: 15_000,
+          ageficeAmountConsumedCurrentYear: 0,
+        },
+      ],
+    });
+    expect(
+      summary.fundingWarnings.filter((w) => w.includes("AGEFICE"))
+    ).toHaveLength(0);
+  });
+
+  it("salarié OPCO touché + opcoEpAmountConsumedCurrentYear renseigné → PAS de warning OPCO EP", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: [
+        {
+          professionalStatus: "salarie",
+          previousYearProduction: null,
+          eligibleOpco: true,
+        },
+      ],
+      opcoEpAmountConsumedCurrentYear: 500,
+    });
+    expect(
+      summary.fundingWarnings.filter((w) => w.includes("OPCO EP"))
+    ).toHaveLength(0);
+  });
+});

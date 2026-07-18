@@ -61,8 +61,14 @@ function applyStartAcademyPricing(
   participantCount: number | null,
   pricePerHourPerParticipant: number,
   participants:
-    | { professionalStatus: ParticipantProfessionalStatus | null; previousYearProduction: number | null }[]
-    | null = null
+    | {
+        professionalStatus: ParticipantProfessionalStatus | null;
+        previousYearProduction: number | null;
+        eligibleOpco?: boolean | null;
+        ageficeAmountConsumedCurrentYear?: number | null;
+      }[]
+    | null = null,
+  opcoEpAmountConsumedCurrentYear: number | null = null
 ): Pricing {
   const costPerParticipant = calculateCostPerParticipant(
     totalDurationHours,
@@ -83,6 +89,7 @@ function applyStartAcademyPricing(
       participants,
       costPerParticipant,
       totalBudget: totalEstimatedCost,
+      opcoEpAmountConsumedCurrentYear,
     });
     estimatedFundingTotal = summary.estimatedFundingTotal;
     estimatedRemainingCost = summary.estimatedRemainingCost;
@@ -170,6 +177,12 @@ interface LoadedContext {
   client: ClientRecord | null;
   recommendation: Recommendation;
   loadedFromSupabase: boolean;
+  // Chantier A funding-opco-ep §9.1 — consommation OPCO EP déjà entamée
+  // par l'entreprise sur l'année civile en cours. Sert à retrancher
+  // l'enveloppe salariés avant plafonnement (cf. training-funding.ts).
+  // NULL = non renseigné → warning « estimation à valider », pas 0
+  // silencieux (cf. PRD §9.3).
+  opcoEpAmountConsumedCurrentYear: number | null;
 }
 
 async function loadFromSupabase(
@@ -278,6 +291,14 @@ async function loadFromSupabase(
         : null,
       recommendation,
       loadedFromSupabase: true,
+      // Cast local : colonne pas encore dans `database.types.ts`.
+      // Migration `20260718180000_add_current_year_consumption` en cours.
+      opcoEpAmountConsumedCurrentYear:
+        (
+          diagRow as unknown as {
+            opco_ep_amount_consumed_current_year: number | null;
+          }
+        ).opco_ep_amount_consumed_current_year ?? null,
     };
   } catch {
     return null;
@@ -374,6 +395,9 @@ export async function POST(request: Request) {
           client: (parsed.data.client ?? null) as ClientRecord | null,
           recommendation: parsed.data.recommendation as Recommendation,
           loadedFromSupabase: false,
+          // Payload inline hérité MVP1 — pas de champ v1.0. Défaut null
+          // → warning « estimation à valider » côté funding.
+          opcoEpAmountConsumedCurrentYear: null,
         }
       : null;
 
@@ -416,6 +440,9 @@ export async function POST(request: Request) {
     professionalStatus: p.professionalStatus as ParticipantProfessionalStatus | null,
     previousYearProduction: p.previousYearProduction,
     eligibleOpco: p.eligibleOpco ?? null,
+    // Chantier A funding-opco-ep §9.2 — cf. training-funding.ts
+    ageficeAmountConsumedCurrentYear:
+      p.ageficeAmountConsumedCurrentYear ?? null,
   }));
 
   // Tarif horaire Start Academy lu depuis `funding_config` (seed
@@ -452,7 +479,8 @@ export async function POST(request: Request) {
             context.recommendation.totalDurationHours,
             context.diagnostic.expectedParticipants ?? null,
             pricePerHour,
-            fundingParticipants.length > 0 ? fundingParticipants : null
+            fundingParticipants.length > 0 ? fundingParticipants : null,
+            context.opcoEpAmountConsumedCurrentYear
           ),
         };
         result = {
@@ -501,7 +529,8 @@ export async function POST(request: Request) {
         context.recommendation.totalDurationHours,
         context.diagnostic.expectedParticipants ?? null,
         pricePerHour,
-        fundingParticipants.length > 0 ? fundingParticipants : null
+        fundingParticipants.length > 0 ? fundingParticipants : null,
+        context.opcoEpAmountConsumedCurrentYear
       ),
     };
     const validated = ProposalSchema.parse(heuristicWithFunding);

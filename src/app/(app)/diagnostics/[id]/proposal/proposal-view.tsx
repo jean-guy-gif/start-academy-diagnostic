@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 
 import {
   generateProposal,
-  getCachedProposalByDiagnosticId,
+  getProposalByDiagnosticId,
   type StoredProposal,
 } from "@/lib/proposals/proposal-service";
 import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
@@ -61,7 +61,7 @@ export function ProposalView({ diagnosticId }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    getCachedProposalByDiagnosticId(diagnosticId).then((result) => {
+    getProposalByDiagnosticId(diagnosticId).then((result) => {
       if (cancelled) return;
       if (result.data) {
         setStatus({ kind: "ready", stored: result.data, warnings: [] });

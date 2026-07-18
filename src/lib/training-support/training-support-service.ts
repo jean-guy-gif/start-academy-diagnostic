@@ -24,7 +24,7 @@ import {
 } from "@/lib/sessions/session-service";
 import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
 import { getRecommendationByDiagnosticId } from "@/lib/recommendations/recommendation-service";
-import { getCachedProposalByDiagnosticId } from "@/lib/proposals/proposal-service";
+import { getProposalByDiagnosticId } from "@/lib/proposals/proposal-service";
 import {
   TrainingSupportSchema,
   type TrainingSupport,
@@ -363,7 +363,7 @@ export async function generateTrainingSupport(
       ? getRecommendationByDiagnosticId(diagnosticId)
       : Promise.resolve({ data: null, mode: "local" as const, error: null }),
     diagnosticId
-      ? getCachedProposalByDiagnosticId(diagnosticId)
+      ? getProposalByDiagnosticId(diagnosticId)
       : Promise.resolve({ data: null, mode: "local" as const, error: null }),
     listParticipantsBySession(sessionId),
   ]);

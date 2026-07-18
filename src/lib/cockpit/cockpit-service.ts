@@ -6,6 +6,7 @@ import {
   calculateTotalTrainingBudget,
   calculateCostPerParticipant,
 } from "@/lib/pricing/training-pricing";
+import { getActiveFundingConfig } from "@/lib/pricing/funding-config-service";
 import { estimateTrainingFunding } from "@/lib/pricing/training-funding";
 import {
   emptyCockpitData,
@@ -342,6 +343,13 @@ export async function getCockpitData(
     postTrainingReviewBySession.set(p.session_id, { status: p.status });
   }
 
+  // Tarif horaire Start Academy — lu UNE fois ici depuis
+  // `funding_config` (seed PRICE_PER_HOUR_PER_PARTICIPANT). Propagé
+  // aux 2 fonctions de construction pipeline. Best-effort : ne throw
+  // jamais, retombe sur DEFAULT_FUNDING_CONFIG si Supabase indisponible.
+  const fundingConfigForPricing = await getActiveFundingConfig();
+  const pricePerHour = fundingConfigForPricing.pricePerHourPerParticipant;
+
   // Construction des items pipeline : un par session, puis on ajoute
   // les diagnostics ORPHELINS (sans session attachée).
   const sessionsByDiag = new Set<string>();
@@ -359,13 +367,18 @@ export async function getCockpitData(
       designedBySession,
       qualityReviewBySession,
       postTrainingReviewBySession,
+      pricePerHour,
     });
   });
 
   for (const d of diagnostics) {
     if (sessionsByDiag.has(d.id)) continue;
     pipeline.push(
-      buildItemFromOrphanDiagnostic(d, { clientsMap, recosByDiag })
+      buildItemFromOrphanDiagnostic(d, {
+        clientsMap,
+        recosByDiag,
+        pricePerHour,
+      })
     );
   }
 
@@ -454,6 +467,13 @@ interface BuildContext {
   designedBySession: Map<string, DesignedSupportRow>;
   qualityReviewBySession: Map<string, { status: string }>;
   postTrainingReviewBySession: Map<string, { status: string }>;
+  /**
+   * Tarif horaire par participant Start Academy (funding_config, seed
+   * PRICE_PER_HOUR_PER_PARTICIPANT). Injecté en une seule lecture
+   * depuis `getCockpitData`, propagé à toutes les fonctions de
+   * construction pipeline (session + orphan diagnostic).
+   */
+  pricePerHour: number;
 }
 
 function buildItemFromSession(
@@ -470,7 +490,8 @@ function buildItemFromSession(
   const totalDurationHours = reco?.total_duration_hours ?? null;
   const totalBudget = calculateTotalTrainingBudget(
     totalDurationHours,
-    s.expected_participants ?? null
+    s.expected_participants ?? null,
+    ctx.pricePerHour
   );
 
   // Estimation funding (best-effort, depuis diagnostic_participants).
@@ -478,7 +499,10 @@ function buildItemFromSession(
   if (s.diagnostic_id) {
     const diagParts = ctx.diagParticipantsByDiag.get(s.diagnostic_id) ?? [];
     if (diagParts.length > 0 && totalDurationHours !== null) {
-      const costPerParticipant = calculateCostPerParticipant(totalDurationHours);
+      const costPerParticipant = calculateCostPerParticipant(
+        totalDurationHours,
+        ctx.pricePerHour
+      );
       const summary = estimateTrainingFunding({
         participants: diagParts.map((p) => ({
           professionalStatus: p.professional_status,
@@ -548,14 +572,15 @@ function buildItemFromSession(
 
 function buildItemFromOrphanDiagnostic(
   d: DiagnosticRow,
-  ctx: Pick<BuildContext, "clientsMap" | "recosByDiag">
+  ctx: Pick<BuildContext, "clientsMap" | "recosByDiag" | "pricePerHour">
 ): CockpitPipelineItem {
   const client = ctx.clientsMap.get(d.client_id) ?? null;
   const reco = ctx.recosByDiag.get(d.id) ?? null;
   const totalDurationHours = reco?.total_duration_hours ?? null;
   const totalBudget = calculateTotalTrainingBudget(
     totalDurationHours,
-    d.expected_participants ?? null
+    d.expected_participants ?? null,
+    ctx.pricePerHour
   );
 
   const stage: CockpitStage = reco

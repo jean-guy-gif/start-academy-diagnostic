@@ -321,10 +321,10 @@ function RecommendationDetails({ stored, warnings, onReanalyze }: DetailsProps) 
             <CardDescription>
               Durée totale : {rec.totalDurationHours} h
               {rec.costPerParticipant !== null && (
-                <> · {formatPriceEuros(rec.costPerParticipant)} / participant (1 h = 42 €)</>
+                <> · {formatPriceEuros(rec.costPerParticipant)} / participant (tarif Start Academy, tout compris)</>
               )}
               {rec.costPerParticipant === null && (
-                <> · tarif calculé automatiquement (1 h = 42 €/personne)</>
+                <> · tarif calculé automatiquement (tarif Start Academy, tout compris)</>
               )}
             </CardDescription>
           </div>

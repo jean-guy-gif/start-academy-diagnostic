@@ -24,6 +24,7 @@ import {
   calculateCostPerParticipant,
   calculateTotalTrainingBudget,
 } from "@/lib/pricing/training-pricing";
+import { getActiveFundingConfig } from "@/lib/pricing/funding-config-service";
 import {
   estimateTrainingFunding,
   type ParticipantProfessionalStatus,
@@ -42,10 +43,14 @@ import {
 export const runtime = "nodejs";
 
 /**
- * Applique la règle tarifaire Start Academy (1 h = 42 € / participant)
- * + l'estimation de prise en charge à un objet `Pricing` — utilisée
- * AVANT validation Zod côté route LLM. Le LLM ne décide jamais du
- * prix : il met null partout, le code écrase ces valeurs ici.
+ * Applique la règle tarifaire Start Academy
+ * (`pricePerHourPerParticipant` € HT / heure / participant, tout
+ * compris) + l'estimation de prise en charge à un objet `Pricing` —
+ * utilisée AVANT validation Zod côté route LLM. Le LLM ne décide
+ * jamais du prix : il met null partout, le code écrase ces valeurs ici.
+ *
+ * Le tarif horaire est injecté depuis `funding_config` (seed
+ * PRICE_PER_HOUR_PER_PARTICIPANT) — pas de constante en dur ici.
  *
  * `participants` optionnel : si fourni (lecture diagnostic_participants),
  * on calcule `estimatedFundingTotal` et `estimatedRemainingCost`. Sinon
@@ -54,14 +59,19 @@ export const runtime = "nodejs";
 function applyStartAcademyPricing(
   totalDurationHours: number | null,
   participantCount: number | null,
+  pricePerHourPerParticipant: number,
   participants:
     | { professionalStatus: ParticipantProfessionalStatus | null; previousYearProduction: number | null }[]
     | null = null
 ): Pricing {
-  const costPerParticipant = calculateCostPerParticipant(totalDurationHours);
+  const costPerParticipant = calculateCostPerParticipant(
+    totalDurationHours,
+    pricePerHourPerParticipant
+  );
   const totalEstimatedCost = calculateTotalTrainingBudget(
     totalDurationHours,
-    participantCount
+    participantCount,
+    pricePerHourPerParticipant
   );
 
   let estimatedFundingTotal: number | null = null;
@@ -86,7 +96,11 @@ function applyStartAcademyPricing(
     totalEstimatedCost,
     pricingNote:
       totalEstimatedCost === null
-        ? buildPricingNote({ totalDurationHours, participantCount })
+        ? buildPricingNote({
+            totalDurationHours,
+            participantCount,
+            pricePerHourPerParticipant,
+          })
         : null,
     estimatedFundingTotal,
     estimatedRemainingCost,
@@ -404,6 +418,13 @@ export async function POST(request: Request) {
     eligibleOpco: p.eligibleOpco ?? null,
   }));
 
+  // Tarif horaire Start Academy lu depuis `funding_config` (seed
+  // PRICE_PER_HOUR_PER_PARTICIPANT). `getActiveFundingConfig()` est
+  // best-effort et retombe silencieusement sur `DEFAULT_FUNDING_CONFIG`
+  // en cas d'indisponibilité Supabase — jamais de throw.
+  const fundingConfigForPricing = await getActiveFundingConfig();
+  const pricePerHour = fundingConfigForPricing.pricePerHourPerParticipant;
+
   let result: ProposalGenerationResult | null = null;
   let llmDurationMs: number | null = null;
   let llmTokensInput: number | null = null;
@@ -430,6 +451,7 @@ export async function POST(request: Request) {
           pricing: applyStartAcademyPricing(
             context.recommendation.totalDurationHours,
             context.diagnostic.expectedParticipants ?? null,
+            pricePerHour,
             fundingParticipants.length > 0 ? fundingParticipants : null
           ),
         };
@@ -471,12 +493,14 @@ export async function POST(request: Request) {
       client: context.client,
       diagnostic: context.diagnostic,
       recommendation: context.recommendation,
+      pricePerHourPerParticipant: pricePerHour,
     });
     const heuristicWithFunding: typeof heuristic = {
       ...heuristic,
       pricing: applyStartAcademyPricing(
         context.recommendation.totalDurationHours,
         context.diagnostic.expectedParticipants ?? null,
+        pricePerHour,
         fundingParticipants.length > 0 ? fundingParticipants : null
       ),
     };

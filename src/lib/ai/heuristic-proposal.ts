@@ -28,6 +28,13 @@ interface HeuristicInputs {
   client: ClientRecord | null;
   diagnostic: DiagnosticRecord;
   recommendation: Recommendation;
+  /**
+   * Tarif horaire par participant, lu depuis `funding_config` par le
+   * caller (route serveur). Injecté ici plutôt qu'importé comme
+   * constante — pattern aligné sur les autres modules du sprint
+   * refonte tarif 2026-07-17.
+   */
+  pricePerHourPerParticipant: number;
 }
 
 const STEP_TEMPLATES: { title: string; description: string; actionRequired: string }[] = [
@@ -105,24 +112,32 @@ function buildProgram(rec: Recommendation, diag: DiagnosticRecord): TrainingProg
 
 function buildPricing(
   rec: Recommendation,
-  diag: DiagnosticRecord
+  diag: DiagnosticRecord,
+  pricePerHourPerParticipant: number
 ): Pricing {
-  // Règle tarifaire Start Academy : 1 h = 42 € / participant.
-  // Calcul effectué par le code — JAMAIS par le LLM. La valeur que
-  // `rec.costPerParticipant` aurait pu contenir est ignorée.
+  // Règle tarifaire Start Academy : `pricePerHourPerParticipant` € /
+  // heure / participant, tout compris (funding_config, seed
+  // PRICE_PER_HOUR_PER_PARTICIPANT). Calcul effectué par le code —
+  // JAMAIS par le LLM. La valeur que `rec.costPerParticipant` aurait
+  // pu contenir est ignorée.
   // Note : ce chemin heuristique n'a pas accès aux diagnostic_participants
   // (côté serveur, async). Les champs funding restent null ici — la
   // route /api/generate-training-proposal applique l'estimation
   // complète quand elle utilise le LLM ou injecte côté serveur.
   const participantCount = diag.expectedParticipants ?? null;
-  const costPerParticipant = calculateCostPerParticipant(rec.totalDurationHours);
+  const costPerParticipant = calculateCostPerParticipant(
+    rec.totalDurationHours,
+    pricePerHourPerParticipant
+  );
   const totalEstimatedCost = calculateTotalTrainingBudget(
     rec.totalDurationHours,
-    participantCount
+    participantCount,
+    pricePerHourPerParticipant
   );
   const pricingNote = buildPricingNote({
     totalDurationHours: rec.totalDurationHours,
     participantCount,
+    pricePerHourPerParticipant,
   });
   return {
     costPerParticipant,
@@ -144,7 +159,8 @@ function buildExecutiveEmail(
   client: ClientRecord | null,
   rec: Recommendation,
   program: TrainingProgram,
-  pricing: Pricing
+  pricing: Pricing,
+  pricePerHourPerParticipant: number
 ): ExecutiveEmail {
   const companyName = client?.companyName ?? "votre équipe";
   const director = client?.director;
@@ -155,12 +171,13 @@ function buildExecutiveEmail(
     .map((m, idx) => `${idx + 1}. ${m.title} (${m.durationHours} h) — ${m.whyThisModule}`)
     .join("\n");
 
+  const rate = pricePerHourPerParticipant;
   const pricingLine =
     pricing.costPerParticipant !== null
       ? pricing.participantCount !== null
-        ? `Budget estimé : ${formatPriceEuros(pricing.totalEstimatedCost)} pour ${pricing.participantCount} participant(s) — ${formatPriceEuros(pricing.costPerParticipant)} par personne (1 h = 42 € / participant).`
-        : `Budget : ${formatPriceEuros(pricing.costPerParticipant)} par participant (1 h = 42 €). Nombre exact de participants à confirmer.`
-      : "Durée totale à finaliser — le budget sera calculé automatiquement (1 h = 42 € / participant).";
+        ? `Budget estimé : ${formatPriceEuros(pricing.totalEstimatedCost)} pour ${pricing.participantCount} participant(s) — ${formatPriceEuros(pricing.costPerParticipant)} par personne (1 h = ${rate} € / participant, tout compris).`
+        : `Budget : ${formatPriceEuros(pricing.costPerParticipant)} par participant (1 h = ${rate} €, tout compris). Nombre exact de participants à confirmer.`
+      : `Durée totale à finaliser — le budget sera calculé automatiquement (1 h = ${rate} € / participant, tout compris).`;
 
   const subject = `${rec.clientSummary.split(".")[0].trim() || "Proposition de formation"} — Start Academy`;
 
@@ -209,13 +226,18 @@ function buildCommsPack(
 
 export function buildHeuristicProposal(inputs: HeuristicInputs): Proposal {
   const program = buildProgram(inputs.recommendation, inputs.diagnostic);
-  const pricing = buildPricing(inputs.recommendation, inputs.diagnostic);
+  const pricing = buildPricing(
+    inputs.recommendation,
+    inputs.diagnostic,
+    inputs.pricePerHourPerParticipant
+  );
   const nextStepsGuide = buildNextSteps();
   const executiveEmail = buildExecutiveEmail(
     inputs.client,
     inputs.recommendation,
     program,
-    pricing
+    pricing,
+    inputs.pricePerHourPerParticipant
   );
   const internalCommunicationPack = buildCommsPack(inputs.client, program);
 

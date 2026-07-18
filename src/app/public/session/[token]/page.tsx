@@ -40,6 +40,10 @@ import {
   formatPriceEuros,
 } from "@/lib/pricing/training-pricing";
 import {
+  DEFAULT_FUNDING_CONFIG,
+  getActiveFundingConfig,
+} from "@/lib/pricing/funding-config-service";
+import {
   estimateTrainingFunding,
   FUNDING_DISCLAIMER,
 } from "@/lib/pricing/training-funding";
@@ -245,6 +249,13 @@ interface SessionViewData {
   totalDurationHours: number | null;
   costPerParticipant: number | null;
   totalEstimatedCost: number | null;
+  /**
+   * Tarif horaire par participant Start Academy — lu depuis
+   * `funding_config` (seed PRICE_PER_HOUR_PER_PARTICIPANT). Affiché
+   * en clair au dirigeant côté public/session pour transparence
+   * (« 1 h = 84 € tout compris »).
+   */
+  pricePerHourPerParticipant: number;
   modules: ModuleRow[];
   commercialName: string | null;
   commercialEmail: string | null;
@@ -283,6 +294,8 @@ async function loadDirigeantView(
     totalDurationHours: null,
     costPerParticipant: null,
     totalEstimatedCost: null,
+    pricePerHourPerParticipant:
+      DEFAULT_FUNDING_CONFIG.pricePerHourPerParticipant,
     modules: [],
     commercialName: null,
     commercialEmail: null,
@@ -331,6 +344,13 @@ async function loadDirigeantView(
   let costPerParticipant: number | null = null;
   let modules: ModuleRow[] = [];
 
+  // Tarif horaire Start Academy — source unique via `funding_config`
+  // (seed PRICE_PER_HOUR_PER_PARTICIPANT). `getActiveFundingConfig()`
+  // ne throw jamais, retombe sur `DEFAULT_FUNDING_CONFIG` si Supabase
+  // indisponible.
+  const fundingConfigForPricing = await getActiveFundingConfig();
+  const pricePerHour = fundingConfigForPricing.pricePerHourPerParticipant;
+
   // On préfère la recommandation directement liée à la session ; à
   // défaut on remonte via le diagnostic.
   let recommendationId: string | null = session.recommendation_id ?? null;
@@ -359,11 +379,16 @@ async function loadDirigeantView(
       toolMaturity = reco.tool_maturity;
       skillLevel = reco.skill_level;
       totalDurationHours = reco.total_duration_hours;
-      // Règle tarifaire Start Academy : 1 h = 42 € / participant. On
-      // ignore volontairement `reco.cost_per_participant` (historique
-      // potentiellement incorrect) et on recalcule à partir de la
-      // durée — source unique de vérité.
-      costPerParticipant = calculateCostPerParticipant(totalDurationHours);
+      // Règle tarifaire Start Academy : `pricePerHour` € / heure /
+      // participant, tout compris (funding_config, seed
+      // PRICE_PER_HOUR_PER_PARTICIPANT). On ignore volontairement
+      // `reco.cost_per_participant` (historique potentiellement
+      // incorrect) et on recalcule à partir de la durée — source
+      // unique de vérité.
+      costPerParticipant = calculateCostPerParticipant(
+        totalDurationHours,
+        pricePerHour
+      );
     }
 
     const { data: recoModules } = await client
@@ -449,7 +474,8 @@ async function loadDirigeantView(
   // n'est exposée au dirigeant.
   const totalEstimatedCost = calculateTotalTrainingBudget(
     totalDurationHours,
-    session.expected_participants ?? null
+    session.expected_participants ?? null,
+    pricePerHour
   );
   let estimatedFundingTotal: number | null = null;
   let estimatedRemainingCost: number | null = null;
@@ -494,6 +520,7 @@ async function loadDirigeantView(
     totalDurationHours,
     costPerParticipant,
     totalEstimatedCost,
+    pricePerHourPerParticipant: pricePerHour,
     modules,
     commercialName,
     commercialEmail,
@@ -730,7 +757,7 @@ export default async function PublicSessionPage({ params }: Props) {
                 label="Coût par participant"
                 value={
                   view.costPerParticipant !== null
-                    ? `${formatPriceEuros(view.costPerParticipant)} (1 h = 42 €)`
+                    ? `${formatPriceEuros(view.costPerParticipant)} (1 h = ${view.pricePerHourPerParticipant} €, tout compris)`
                     : "Calculé à la durée"
                 }
               />

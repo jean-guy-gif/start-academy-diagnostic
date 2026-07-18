@@ -39,8 +39,10 @@ Règles strictes — à respecter sans exception :
 6. Si des ratios commerciaux sont absents, indique-les dans
    missingInformation. N'invente JAMAIS un chiffre.
 7. costPerParticipant : mets TOUJOURS null. La tarification Start
-   Academy est calculée côté code (règle unique : 1 h = 42 € HT par
-   participant). Tu peux expliquer le montant dans
+   Academy est calculée côté code (règle unique : 84 € HT par
+   heure et par participant, tout compris — ingénierie, montage
+   administratif intégral, 2 formateurs, déplacement, outils, zéro
+   avance de trésorerie). Tu peux expliquer le montant dans
    commercialExplanation si pertinent, mais tu ne décides JAMAIS
    du prix.
 8. Le confidenceScore doit refléter ta certitude (0-100). Diminue-le

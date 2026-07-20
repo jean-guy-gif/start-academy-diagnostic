@@ -12,6 +12,10 @@
  * client comme serveur.
  */
 
+import {
+  computeAgeficePresentielFunding,
+  type AgeficePresentielFundingResult,
+} from "./agefice-presentiel-funding";
 import { formatPriceEuros } from "./training-pricing";
 
 // Règle MVP : seuil de production N-1 au-delà duquel un agent
@@ -43,6 +47,9 @@ export interface RuntimeFundingConfig {
   ageficeAnnualCap?: number;
   opcoEpAnnualCap?: number;
   consumptionLeverPercent?: number;
+  pricePerHourPerParticipant?: number;
+  followupHoursMultiplier?: number;
+  ageficeHourlyCapPresentiel2026?: number;
 }
 
 function resolveConfig(config?: RuntimeFundingConfig): {
@@ -79,6 +86,12 @@ export interface ParticipantFundingEstimate {
   estimatedFundingAmount: number;
   estimatedRemainingCost: number;
   note: string | null;
+  /**
+   * Rempli uniquement pour un indé AGEFICE quand `trainingHours` est
+   * fourni. Utilisé par `estimateTrainingFunding` pour agréger la
+   * décision d'affichage `ageficePresentielCoverage`.
+   */
+  ageficePresentielResult?: AgeficePresentielFundingResult;
 }
 
 export interface EstimateParticipantFundingParams {
@@ -101,6 +114,16 @@ export interface EstimateParticipantFundingParams {
    * duplication du retranchement à corriger en B.
    */
   ageficeAmountConsumedCurrentYear?: number | null;
+  /**
+   * Volume horaire de la formation (totalDurationHours de la reco).
+   * Opt-in :
+   *   • Absent → comportement historique inchangé (branche indé AGEFICE
+   *     éligible utilise `cap = min(costPerParticipant, envelope)`).
+   *   • Fourni → la branche indé AGEFICE éligible délègue à
+   *     `computeAgeficePresentielFunding` (plafond horaire).
+   * La branche salarié OPCO EP n'est jamais affectée.
+   */
+  trainingHours?: number | null;
   /** v1.0 : override du référentiel `funding_config` en base. */
   config?: RuntimeFundingConfig;
 }
@@ -125,6 +148,7 @@ export function estimateParticipantFunding(
     costPerParticipant,
     eligibleOpco,
     ageficeAmountConsumedCurrentYear,
+    trainingHours,
     config,
   } = params;
   const {
@@ -157,8 +181,40 @@ export function estimateParticipantFunding(
       typeof previousYearProduction === "number" &&
       previousYearProduction > ageficeThreshold
     ) {
-      // Enveloppe AGEFICE retranchée du montant déjà consommé cette
-      // année civile (§9.2 PRD).
+      // trainingHours fourni → délégation au module horaire.
+      // envelopeRemaining=null si ageficeAmountConsumedCurrentYear=null
+      // (« droits à vérifier »), sinon plafond annuel − consommé.
+      if (typeof trainingHours === "number" && trainingHours > 0) {
+        const envelopeRemaining =
+          ageficeAmountConsumedCurrentYear === null ||
+          ageficeAmountConsumedCurrentYear === undefined
+            ? null
+            : Math.max(
+                0,
+                ageficeAnnualCap - ageficeAmountConsumedCurrentYear
+              );
+        const ageficePresentielResult = computeAgeficePresentielFunding({
+          trainingHours,
+          envelopeRemaining,
+          hourlyCap: config?.ageficeHourlyCapPresentiel2026,
+          followupHoursMultiplier: config?.followupHoursMultiplier,
+          pricePerHour: config?.pricePerHourPerParticipant,
+        });
+        const estimatedFundingAmount = roundEuro(
+          ageficePresentielResult.priseEnCharge
+        );
+        const estimatedRemainingCost = roundEuro(
+          Math.max(costPerParticipant - estimatedFundingAmount, 0)
+        );
+        return {
+          eligibility: "potentially_eligible",
+          estimatedFundingAmount,
+          estimatedRemainingCost,
+          note: FUNDING_DISCLAIMER,
+          ageficePresentielResult,
+        };
+      }
+      // Fallback historique (trainingHours absent) — cap = min(cost, envelope).
       const cap = Math.min(costPerParticipant, ageficeEnvelopeAvailable);
       const estimatedFundingAmount = roundEuro(cap);
       const estimatedRemainingCost = roundEuro(
@@ -256,6 +312,18 @@ export interface TrainingFundingSummary {
    * l'enveloppe pourrait être plus faible en réalité.
    */
   fundingWarnings: string[];
+  /**
+   * Décision agrégée d'affichage pour la branche indé AGEFICE
+   * présentiel (chantier 2026-07-20) :
+   *   • 'badge' — au moins un indé, TOUS les indés éligibles sont
+   *     isFullyCovered avec enveloppe connue ET CA N-1 renseigné.
+   *   • 'alert' — au moins un indé en 'alert' (CA N-1 manquant OU
+   *     enveloppe inconnue). Prioritaire sur 'badge'.
+   *   • 'none' — au moins un indé mais aucune décision définitive.
+   *   • null — `trainingHours` non fourni (chemin fallback). Le test
+   *     de contrat (i) échoue si ce cas se produit en prod.
+   */
+  ageficePresentielCoverage: "badge" | "alert" | "none" | null;
 }
 
 export interface ParticipantFundingInput {
@@ -290,6 +358,13 @@ export function estimateTrainingFunding(params: {
    * warning « estimation à valider ».
    */
   opcoEpAmountConsumedCurrentYear?: number | null;
+  /**
+   * Chantier 2026-07-20 — volume horaire de la formation (globale à
+   * la reco). Propagé à chaque appel `estimateParticipantFunding` pour
+   * activer la branche indé AGEFICE présentiel horaire. Absent →
+   * chemin fallback (ageficePresentielCoverage = null).
+   */
+  trainingHours?: number | null;
 }): TrainingFundingSummary {
   const {
     participants,
@@ -297,12 +372,20 @@ export function estimateTrainingFunding(params: {
     totalBudget,
     config,
     opcoEpAmountConsumedCurrentYear,
+    trainingHours,
   } = params;
   let estimatedFundingTotal = 0;
   let eligibleCount = 0;
   const fundingWarnings: string[] = [];
   let indepsMissingAgeficeConsumption = 0;
   let hasSalarieOpcoEpTouched = false;
+
+  const ageficeThreshold =
+    config?.ageficeThreshold ?? FUNDING_REVENUE_THRESHOLD;
+  // Décisions par indé pour agrégation `ageficePresentielCoverage`.
+  const ageficePresentielKinds: Array<"badge" | "alert" | "none"> = [];
+  const trainingHoursProvided =
+    typeof trainingHours === "number" && trainingHours > 0;
 
   for (const p of participants) {
     // Trace des indés éligibles qui n'ont pas renseigné leur AGEFICE
@@ -329,10 +412,49 @@ export function estimateTrainingFunding(params: {
       ageficeAmountConsumedCurrentYear:
         p.ageficeAmountConsumedCurrentYear ?? null,
       costPerParticipant,
+      trainingHours: trainingHoursProvided ? trainingHours : undefined,
       config,
     });
     estimatedFundingTotal += est.estimatedFundingAmount;
     if (est.eligibility === "potentially_eligible") eligibleCount += 1;
+
+    // Décision d'affichage par indé, si trainingHours propagé.
+    // CA N-1 manquant → 'alert'.
+    // CA N-1 sous seuil → non éligible, aucun indicateur.
+    // CA N-1 > seuil : dérive du résultat calculé (envelope inconnue
+    // → 'alert' ; couverture 100 % → 'badge' ; reste > 0 → 'none').
+    if (
+      trainingHoursProvided &&
+      p.professionalStatus === "agent_commercial_independant"
+    ) {
+      if (p.previousYearProduction === null) {
+        ageficePresentielKinds.push("alert");
+      } else if (p.previousYearProduction > ageficeThreshold) {
+        const r = est.ageficePresentielResult;
+        if (!r || r.alert !== null || r.envelopeRemaining === null) {
+          ageficePresentielKinds.push("alert");
+        } else if (r.isFullyCovered && r.resteACharge === 0) {
+          ageficePresentielKinds.push("badge");
+        } else {
+          ageficePresentielKinds.push("none");
+        }
+      }
+      // CA sous seuil → non éligible AGEFICE, pas d'entrée.
+    }
+  }
+
+  // Agrégation : alerte prioritaire sur badge.
+  let ageficePresentielCoverage: TrainingFundingSummary["ageficePresentielCoverage"];
+  if (!trainingHoursProvided) {
+    ageficePresentielCoverage = null;
+  } else if (ageficePresentielKinds.length === 0) {
+    ageficePresentielCoverage = "none";
+  } else if (ageficePresentielKinds.includes("alert")) {
+    ageficePresentielCoverage = "alert";
+  } else if (ageficePresentielKinds.every((k) => k === "badge")) {
+    ageficePresentielCoverage = "badge";
+  } else {
+    ageficePresentielCoverage = "none";
   }
 
   if (indepsMissingAgeficeConsumption > 0) {
@@ -368,6 +490,7 @@ export function estimateTrainingFunding(params: {
     totalParticipantCount: participants.length,
     disclaimer: FUNDING_DISCLAIMER,
     fundingWarnings,
+    ageficePresentielCoverage,
   };
 }
 

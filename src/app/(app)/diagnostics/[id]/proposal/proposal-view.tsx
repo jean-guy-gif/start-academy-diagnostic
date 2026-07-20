@@ -552,9 +552,27 @@ function PricingCard({ pricing }: { pricing: StoredProposal["proposal"]["pricing
   return (
     <Card className="border-border/60 bg-white">
       <CardHeader>
-        <CardTitle className="font-heading text-xl text-[#00527a]">
-          Tarification
-        </CardTitle>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="font-heading text-xl text-[#00527a]">
+            Tarification
+          </CardTitle>
+          {pricing.ageficePresentielCoverage === "badge" && (
+            <span
+              data-testid="agefice-full-coverage-badge"
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-900"
+            >
+              Prise en charge 100 %
+            </span>
+          )}
+          {pricing.ageficePresentielCoverage === "alert" && (
+            <span
+              data-testid="agefice-rights-check-alert"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900"
+            >
+              Droits à vérifier
+            </span>
+          )}
+        </div>
         {pricing.pricingNote && (
           <CardDescription className="text-amber-800">
             {pricing.pricingNote}

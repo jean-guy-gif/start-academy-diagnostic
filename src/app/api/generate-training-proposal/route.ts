@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { applyStartAcademyPricing } from "@/lib/pricing/apply-start-academy-pricing";
 import { buildProposalPrompt } from "@/lib/ai/build-proposal-prompt";
 import { buildHeuristicProposal } from "@/lib/ai/heuristic-proposal";
 import { callLlm, extractJsonObject } from "@/lib/ai/llm-client";
@@ -18,17 +19,8 @@ import type {
   DiagnosticRecord,
 } from "@/lib/diagnostics/diagnostic-service";
 import type { Recommendation } from "@/lib/ai/recommendation-schema";
-import type { Pricing } from "@/lib/ai/proposal-schema";
-import {
-  buildPricingNote,
-  calculateCostPerParticipant,
-  calculateTotalTrainingBudget,
-} from "@/lib/pricing/training-pricing";
 import { getActiveFundingConfig } from "@/lib/pricing/funding-config-service";
-import {
-  estimateTrainingFunding,
-  type ParticipantProfessionalStatus,
-} from "@/lib/pricing/training-funding";
+import { type ParticipantProfessionalStatus } from "@/lib/pricing/training-funding";
 import { listDiagnosticParticipants } from "@/lib/diagnostics/diagnostic-participants-service";
 import { requireApiRole } from "@/lib/auth/require-api-role";
 import { INTERNAL_APP_ROLES } from "@/lib/auth/roles";
@@ -42,79 +34,10 @@ import {
 
 export const runtime = "nodejs";
 
-/**
- * Applique la règle tarifaire Start Academy
- * (`pricePerHourPerParticipant` € HT / heure / participant, tout
- * compris) + l'estimation de prise en charge à un objet `Pricing` —
- * utilisée AVANT validation Zod côté route LLM. Le LLM ne décide
- * jamais du prix : il met null partout, le code écrase ces valeurs ici.
- *
- * Le tarif horaire est injecté depuis `funding_config` (seed
- * PRICE_PER_HOUR_PER_PARTICIPANT) — pas de constante en dur ici.
- *
- * `participants` optionnel : si fourni (lecture diagnostic_participants),
- * on calcule `estimatedFundingTotal` et `estimatedRemainingCost`. Sinon
- * ces champs restent null.
- */
-function applyStartAcademyPricing(
-  totalDurationHours: number | null,
-  participantCount: number | null,
-  pricePerHourPerParticipant: number,
-  participants:
-    | {
-        professionalStatus: ParticipantProfessionalStatus | null;
-        previousYearProduction: number | null;
-        eligibleOpco?: boolean | null;
-        ageficeAmountConsumedCurrentYear?: number | null;
-      }[]
-    | null = null,
-  opcoEpAmountConsumedCurrentYear: number | null = null
-): Pricing {
-  const costPerParticipant = calculateCostPerParticipant(
-    totalDurationHours,
-    pricePerHourPerParticipant
-  );
-  const totalEstimatedCost = calculateTotalTrainingBudget(
-    totalDurationHours,
-    participantCount,
-    pricePerHourPerParticipant
-  );
-
-  let estimatedFundingTotal: number | null = null;
-  let estimatedRemainingCost: number | null = null;
-  let eligibleParticipantCount: number | null = null;
-  let fundingDisclaimer: string | null = null;
-  if (participants && participants.length > 0 && costPerParticipant !== null) {
-    const summary = estimateTrainingFunding({
-      participants,
-      costPerParticipant,
-      totalBudget: totalEstimatedCost,
-      opcoEpAmountConsumedCurrentYear,
-    });
-    estimatedFundingTotal = summary.estimatedFundingTotal;
-    estimatedRemainingCost = summary.estimatedRemainingCost;
-    eligibleParticipantCount = summary.eligibleParticipantCount;
-    fundingDisclaimer = summary.disclaimer;
-  }
-
-  return {
-    costPerParticipant,
-    participantCount,
-    totalEstimatedCost,
-    pricingNote:
-      totalEstimatedCost === null
-        ? buildPricingNote({
-            totalDurationHours,
-            participantCount,
-            pricePerHourPerParticipant,
-          })
-        : null,
-    estimatedFundingTotal,
-    estimatedRemainingCost,
-    eligibleParticipantCount,
-    fundingDisclaimer,
-  };
-}
+// applyStartAcademyPricing extraite dans
+// `src/lib/pricing/apply-start-academy-pricing.ts` pour permettre son
+// import direct par les tests bout-à-bout (une route.ts App Router
+// ne peut pas exposer d'autres exports que ses handlers HTTP).
 
 // ---------------------------------------------------------------------------
 // Schemas d'entrée

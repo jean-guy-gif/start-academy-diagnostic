@@ -148,6 +148,7 @@ function buildPricing(
     estimatedRemainingCost: null,
     eligibleParticipantCount: null,
     fundingDisclaimer: null,
+    ageficePresentielCoverage: null,
   };
 }
 

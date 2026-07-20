@@ -63,6 +63,17 @@ export const PricingSchema = z
       .default(null),
     /** Mention non-contractuelle obligatoire dès qu'on affiche un montant. */
     fundingDisclaimer: z.string().nullable().optional().default(null),
+    /**
+     * Décision agrégée d'affichage pour la branche indé AGEFICE
+     * présentiel — miroir de `TrainingFundingSummary.
+     * ageficePresentielCoverage`. `null` = chemin fallback
+     * (trainingHours non propagé).
+     */
+    ageficePresentielCoverage: z
+      .enum(["badge", "alert", "none"])
+      .nullable()
+      .optional()
+      .default(null),
   })
   .superRefine((value, ctx) => {
     if (value.costPerParticipant === null) {

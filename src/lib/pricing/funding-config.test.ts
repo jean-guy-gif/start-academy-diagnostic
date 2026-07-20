@@ -18,8 +18,11 @@ const EXPECTED_DEFAULTS = {
   ageficeAnnualCap: 3000,
   opcoEpAnnualCap: 2500,
   consumptionLeverPercent: 30,
-  // Refonte tarif 2026-07-17 (seed PRICE_PER_HOUR_PER_PARTICIPANT).
+  // Seed PRICE_PER_HOUR_PER_PARTICIPANT (migration 20260717120000).
   pricePerHourPerParticipant: 84,
+  // Seeds AGEFICE présentiel 2026 (migration 20260720120000).
+  followupHoursMultiplier: 1,
+  ageficeHourlyCapPresentiel2026: 42,
 };
 
 const mockCreate = vi.fn();

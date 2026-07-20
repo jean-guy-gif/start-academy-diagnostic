@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  AGEFICE_HOURLY_CAP_PRESENTIEL_2026,
+  FOLLOWUP_HOURS_MULTIPLIER,
+} from "./agefice-presentiel-funding";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 
 /**
@@ -22,6 +26,19 @@ export interface FundingConfig {
    * `20260717120000_add_price_per_hour_seed.sql`.
    */
   pricePerHourPerParticipant: number;
+  /**
+   * Ratio d'heures forfaitées ajoutées aux heures de formation pour
+   * construire heures_dossier
+   * (heures_dossier = heures_formation * (1 + followupHoursMultiplier)).
+   * Seedé par `20260720120000_add_agefice_presentiel_2026_seeds.sql`.
+   */
+  followupHoursMultiplier: number;
+  /**
+   * Plafond horaire AGEFICE présentiel millésime 2026 appliqué aux
+   * heures_dossier (plafond = heures_dossier * ageficeHourlyCapPresentiel2026).
+   * Seedé par `20260720120000_add_agefice_presentiel_2026_seeds.sql`.
+   */
+  ageficeHourlyCapPresentiel2026: number;
 }
 
 /**
@@ -40,6 +57,8 @@ export const DEFAULT_FUNDING_CONFIG: FundingConfig = {
   opcoEpAnnualCap: 2500,
   consumptionLeverPercent: 30,
   pricePerHourPerParticipant: 84,
+  followupHoursMultiplier: FOLLOWUP_HOURS_MULTIPLIER,
+  ageficeHourlyCapPresentiel2026: AGEFICE_HOURLY_CAP_PRESENTIEL_2026,
 };
 
 type ConfigRow = {
@@ -91,6 +110,12 @@ export async function getActiveFundingConfig(): Promise<FundingConfig> {
       pricePerHourPerParticipant:
         byKey.get("PRICE_PER_HOUR_PER_PARTICIPANT") ??
         DEFAULT_FUNDING_CONFIG.pricePerHourPerParticipant,
+      followupHoursMultiplier:
+        byKey.get("FOLLOWUP_HOURS_MULTIPLIER") ??
+        DEFAULT_FUNDING_CONFIG.followupHoursMultiplier,
+      ageficeHourlyCapPresentiel2026:
+        byKey.get("AGEFICE_HOURLY_CAP_PRESENTIEL_2026") ??
+        DEFAULT_FUNDING_CONFIG.ageficeHourlyCapPresentiel2026,
     };
   } catch {
     return { ...DEFAULT_FUNDING_CONFIG };

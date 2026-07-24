@@ -22,6 +22,7 @@
 import type { AnswerRecord } from "@/lib/diagnostics/diagnostic-service";
 import type {
   AlertSeverity,
+  BenchmarksOverride,
   DiagnosticAlert,
 } from "@/lib/diagnostics/ratios-service";
 import { DEFAULT_BENCHMARKS } from "@/lib/diagnostics/ratios-service";
@@ -66,6 +67,12 @@ export interface AuditRatio {
   benchmark: number | null;
   status: RatioStatus;
   sourceQuestionIds: string[];
+  /**
+   * `true` = plus la valeur est basse, mieux c'est (ex. taux de chute
+   * compromis→acte, durée mandat). Le consommateur (prompt IA, rendu
+   * print) doit inverser sa lecture. Défaut : `false`.
+   */
+  higherIsWorse?: boolean;
 }
 
 export interface PracticeFlag {
@@ -123,6 +130,14 @@ export interface BuildAuditContentInput {
    * `priorities`. Défaut : 3.
    */
   topAlertsLimit?: number;
+  /**
+   * Override des seuils. Passé tel quel — les seuils exposés par
+   * `AuditRatio.benchmark` seront ceux du merge
+   * `{ ...DEFAULT_BENCHMARKS, ...benchmarks }`. Le contract test
+   * `benchmarks-are-shared` prouve qu'aucune valeur n'est copiée en
+   * dur dans ce module.
+   */
+  benchmarks?: BenchmarksOverride;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,13 +155,12 @@ export const SUMMARY_KEY_METRICS: readonly string[] = [
   "mandatesAverageDurationMonths",
 ];
 
-/**
- * Benchmark note Google (échelle 1-5). Absent des `DEFAULT_BENCHMARKS`
- * qui manipulent des pourcents ; ajouté ici pour ne pas polluer le
- * référentiel commun. À ré-évaluer si le champ `google-reviews-score`
- * est un jour retypé (cf. backlog).
- */
-const GOOGLE_REVIEWS_SCORE_BENCHMARK = 4.5;
+// Note Google — pas de benchmark ici. `DEFAULT_BENCHMARKS` ne fournit
+// pas de seuil pour une note sur 5, et introduire une valeur en dur
+// dans ce module dupliquerait un référentiel produit qui n'existe pas
+// encore. Statut résultant : `unknown` tant que le seuil n'est pas
+// centralisé (cf. `docs/diagnostic-cleanup-backlog.md` — retypage
+// `rating` en chantier séparé qui posera le benchmark côté DB).
 
 // ---------------------------------------------------------------------------
 // Mapping — 71 IDs → (bloc, role, thème / verbatim key)
@@ -180,6 +194,13 @@ export const QUESTION_MAPPING: Readonly<Record<string, MappingEntry>> = {
     block: "performance_chain",
     role: "ratio_input",
   },
+  // Rôle `context` : donnée quantitative (heures/semaine par agent)
+  // qui n'alimente ni un ratio calculé (aucun dénominateur pertinent
+  // dans le questionnaire), ni un flag comportemental. Elle nourrit
+  // la lecture qualitative de la maturité prospection dans le prompt
+  // IA (« l'équipe consacre X h/semaine ») sans être affichée comme
+  // KPI. Seule question actuellement en `context` — inventaire à
+  // reconsidérer si d'autres compteurs sans dénominateur émergent.
   "prospecting-hours-per-week": {
     block: "practices",
     role: "context",
@@ -593,7 +614,10 @@ function parseMultichoice(raw: string | null): string[] {
 // Sous-builders
 // ---------------------------------------------------------------------------
 
-function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
+function buildPerformanceRatios(
+  answers: AnswerRecord[],
+  benchmarks: typeof DEFAULT_BENCHMARKS
+): AuditRatio[] {
   const contactsPerMonth = answerNumber(
     answers,
     "prospecting-contacts-per-month"
@@ -638,8 +662,8 @@ function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
       label: "Contacts vendeurs → RDV (%)",
       value: contactsToRdv,
       unit: "percent",
-      benchmark: DEFAULT_BENCHMARKS.contactsToRdvPercent,
-      status: computeStatus(contactsToRdv, DEFAULT_BENCHMARKS.contactsToRdvPercent),
+      benchmark: benchmarks.contactsToRdvPercent,
+      status: computeStatus(contactsToRdv, benchmarks.contactsToRdvPercent),
       sourceQuestionIds: [
         "prospecting-contacts-per-month",
         "seller-meetings-per-month",
@@ -659,8 +683,8 @@ function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
       label: "Estimation → mandat (%)",
       value: perfRateMandat,
       unit: "percent",
-      benchmark: DEFAULT_BENCHMARKS.rdvToMandatPercent,
-      status: computeStatus(perfRateMandat, DEFAULT_BENCHMARKS.rdvToMandatPercent),
+      benchmark: benchmarks.rdvToMandatPercent,
+      status: computeStatus(perfRateMandat, benchmarks.rdvToMandatPercent),
       sourceQuestionIds: ["perf-rate-mandat"],
     },
     {
@@ -677,8 +701,8 @@ function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
       label: "Part d'exclusivité dans les rentrées (%)",
       value: exclusivityPercent,
       unit: "percent",
-      benchmark: DEFAULT_BENCHMARKS.exclusivityPercent,
-      status: computeStatus(exclusivityPercent, DEFAULT_BENCHMARKS.exclusivityPercent),
+      benchmark: benchmarks.exclusivityPercent,
+      status: computeStatus(exclusivityPercent, benchmarks.exclusivityPercent),
       sourceQuestionIds: ["mandates-exclusivity-percent"],
     },
     {
@@ -689,6 +713,7 @@ function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
       benchmark: null,
       status: "unknown",
       sourceQuestionIds: ["mandates-average-duration-months"],
+      higherIsWorse: true,
     },
     {
       key: "visitesToOffresPercent",
@@ -704,10 +729,10 @@ function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
       label: "Offres → compromis (%)",
       value: offresToCompromis,
       unit: "percent",
-      benchmark: DEFAULT_BENCHMARKS.offresToCompromisPercent,
+      benchmark: benchmarks.offresToCompromisPercent,
       status: computeStatus(
         offresToCompromis,
-        DEFAULT_BENCHMARKS.offresToCompromisPercent
+        benchmarks.offresToCompromisPercent
       ),
       sourceQuestionIds: ["offers-per-month", "compromis-per-month"],
     },
@@ -716,21 +741,22 @@ function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
       label: "Compromis → acte (%)",
       value: compromisToActe,
       unit: "percent",
-      benchmark: DEFAULT_BENCHMARKS.compromisToActePercent,
+      benchmark: benchmarks.compromisToActePercent,
       status: computeStatus(
         compromisToActe,
-        DEFAULT_BENCHMARKS.compromisToActePercent
+        benchmarks.compromisToActePercent
       ),
       sourceQuestionIds: ["compromis-per-month", "actes-per-month"],
     },
     {
       key: "chuteCompromisActePercent",
-      label: "Taux de chute compromis → acte (%) — plus c'est bas, mieux c'est",
+      label: "Taux de chute compromis → acte (%)",
       value: chuteCompromisActe,
       unit: "percent",
       benchmark: null,
       status: "unknown",
       sourceQuestionIds: ["chute-compromis-acte-percent"],
+      higherIsWorse: true,
     },
     {
       key: "priceDropPerMonthPercent",
@@ -770,13 +796,16 @@ function buildPerformanceRatios(answers: AnswerRecord[]): AuditRatio[] {
     },
     {
       // Note Google — typée `percent` en source, traitée comme note sur 5
-      // ici (unit `rating_5`, benchmark 4.5). Backlog documenté.
+      // ici (`unit: rating_5`). Pas de benchmark : introduire un seuil
+      // en dur dupliquerait un référentiel qui n'existe pas encore côté
+      // `DEFAULT_BENCHMARKS`. Statut `unknown` jusqu'à ce que le
+      // retypage `rating` du backlog pose le seuil au bon endroit.
       key: "googleReviewsScore",
       label: "Note Google (sur 5)",
       value: reviewsScore,
       unit: "rating_5",
-      benchmark: GOOGLE_REVIEWS_SCORE_BENCHMARK,
-      status: computeStatus(reviewsScore, GOOGLE_REVIEWS_SCORE_BENCHMARK),
+      benchmark: null,
+      status: "unknown",
       sourceQuestionIds: ["google-reviews-score"],
     },
   ];
@@ -909,7 +938,8 @@ export function buildAuditContent(
 ): AuditContent {
   const alerts = input.alerts ?? [];
   const topAlertsLimit = input.topAlertsLimit ?? 3;
-  const ratios = buildPerformanceRatios(input.answers);
+  const benchmarks = { ...DEFAULT_BENCHMARKS, ...(input.benchmarks ?? {}) };
+  const ratios = buildPerformanceRatios(input.answers, benchmarks);
   const flags = buildPracticeFlags(input.answers);
   const verbatims = buildVerbatims(input.answers);
   const completeness = buildCompleteness(input.answers);

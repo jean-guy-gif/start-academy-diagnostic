@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AnswerRecord } from "@/lib/diagnostics/diagnostic-service";
 import type { DiagnosticAlert } from "@/lib/diagnostics/ratios-service";
+import { DEFAULT_BENCHMARKS } from "@/lib/diagnostics/ratios-service";
 import { diagnosticQuestions } from "@/lib/data/diagnostic-questions";
 
 import {
@@ -129,8 +130,8 @@ describe("Ratios calculés — bloc performance_chain", () => {
 // Cas particulier — note Google sur 5
 // ---------------------------------------------------------------------------
 
-describe("google-reviews-score — traité comme note sur 5 malgré son type percent", () => {
-  it("valeur 4,6 → unit rating_5, benchmark 4.5, status above", () => {
+describe("google-reviews-score — note sur 5 sans benchmark (unknown)", () => {
+  it("valeur 4,6 → value 4.6, unit rating_5, benchmark null, status unknown", () => {
     const answers = [makeAnswer("google-reviews-score", "4,6")];
     const audit = buildAuditContent({ answers });
     const r = audit.performanceChain.ratios.find(
@@ -138,17 +139,128 @@ describe("google-reviews-score — traité comme note sur 5 malgré son type per
     );
     expect(r?.value).toBeCloseTo(4.6, 2);
     expect(r?.unit).toBe("rating_5");
-    expect(r?.benchmark).toBe(4.5);
-    expect(r?.status).toBe("above");
+    expect(r?.benchmark).toBeNull();
+    expect(r?.status).toBe("unknown");
   });
 
-  it("valeur 3,8 → status below", () => {
+  it("valeur 3,8 → status reste unknown (aucun seuil de dupliqué en dur)", () => {
     const answers = [makeAnswer("google-reviews-score", "3.8")];
     const audit = buildAuditContent({ answers });
     const r = audit.performanceChain.ratios.find(
       (x) => x.key === "googleReviewsScore"
     );
-    expect(r?.status).toBe("below");
+    expect(r?.status).toBe("unknown");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Contract benchmarks partagés — pas de copie en dur des seuils
+// ---------------------------------------------------------------------------
+
+describe("Contract benchmarks — mêmes constantes que ratios-service, pas de copie en dur", () => {
+  it("les benchmarks exposés correspondent à DEFAULT_BENCHMARKS (source unique)", () => {
+    const audit = buildAuditContent({ answers: [] });
+    const byKey = new Map(
+      audit.performanceChain.ratios.map((r) => [r.key, r])
+    );
+    // Chaque ratio avec benchmark non-null DOIT correspondre à une
+    // clé exacte de DEFAULT_BENCHMARKS. Si quelqu'un copie « 40 » en
+    // dur au lieu de lire depuis la source, le mapping ci-dessous
+    // reste vrai — donc on complète avec le test d'override qui
+    // capte la copie en dur.
+    expect(byKey.get("contactsToRdvPercent")?.benchmark).toBe(
+      DEFAULT_BENCHMARKS.contactsToRdvPercent
+    );
+    expect(byKey.get("estimationToMandatPercent")?.benchmark).toBe(
+      DEFAULT_BENCHMARKS.rdvToMandatPercent
+    );
+    expect(byKey.get("exclusivityPercent")?.benchmark).toBe(
+      DEFAULT_BENCHMARKS.exclusivityPercent
+    );
+    expect(byKey.get("offresToCompromisPercent")?.benchmark).toBe(
+      DEFAULT_BENCHMARKS.offresToCompromisPercent
+    );
+    expect(byKey.get("compromisToActePercent")?.benchmark).toBe(
+      DEFAULT_BENCHMARKS.compromisToActePercent
+    );
+  });
+
+  it("override `input.benchmarks` est propagé aux ratios — preuve qu'aucun seuil n'est copié en dur", () => {
+    // Chaque seuil est repoussé à une valeur très distinctive : si
+    // le module contenait une copie en dur (« 40 »), le benchmark
+    // exposé ne bougerait pas et le test échouerait. Cast : le type
+    // `BenchmarksOverride` porte les littéraux du const `as const`
+    // du référentiel — l'override numérique par un chiffre distinct
+    // n'est possible qu'en cast (contrainte de la source, pas du test).
+    const override = {
+      contactsToRdvPercent: 999,
+      rdvToMandatPercent: 998,
+      exclusivityPercent: 997,
+      offresToCompromisPercent: 996,
+      compromisToActePercent: 995,
+    } as unknown as import("@/lib/diagnostics/ratios-service").BenchmarksOverride;
+    const audit = buildAuditContent({
+      answers: [],
+      benchmarks: override,
+    });
+    const byKey = new Map(
+      audit.performanceChain.ratios.map((r) => [r.key, r])
+    );
+    expect(byKey.get("contactsToRdvPercent")?.benchmark).toBe(999);
+    expect(byKey.get("estimationToMandatPercent")?.benchmark).toBe(998);
+    expect(byKey.get("exclusivityPercent")?.benchmark).toBe(997);
+    expect(byKey.get("offresToCompromisPercent")?.benchmark).toBe(996);
+    expect(byKey.get("compromisToActePercent")?.benchmark).toBe(995);
+  });
+
+  it("le statut est recalculé sur l'override — preuve que le seuil est LU dynamiquement, pas figé", () => {
+    // Sans override, 45 % > benchmark 40 % (défaut) → status above.
+    // Avec override 50 %, 45 % < 50 % → status below.
+    const answers = [makeAnswer("perf-rate-mandat", "45")];
+
+    const baseline = buildAuditContent({ answers });
+    const baselineRatio = baseline.performanceChain.ratios.find(
+      (r) => r.key === "estimationToMandatPercent"
+    );
+    expect(baselineRatio?.status).toBe("above");
+    expect(baselineRatio?.benchmark).toBe(40);
+
+    const overridden = buildAuditContent({
+      answers,
+      benchmarks: {
+        rdvToMandatPercent: 50,
+      } as unknown as import("@/lib/diagnostics/ratios-service").BenchmarksOverride,
+    });
+    const overriddenRatio = overridden.performanceChain.ratios.find(
+      (r) => r.key === "estimationToMandatPercent"
+    );
+    expect(overriddenRatio?.status).toBe("below");
+    expect(overriddenRatio?.benchmark).toBe(50);
+  });
+});
+
+describe("higherIsWorse — ratios inversés", () => {
+  it("chuteCompromisActePercent + mandatesAverageDurationMonths portent higherIsWorse=true", () => {
+    const audit = buildAuditContent({ answers: [] });
+    const byKey = new Map(
+      audit.performanceChain.ratios.map((r) => [r.key, r])
+    );
+    expect(byKey.get("chuteCompromisActePercent")?.higherIsWorse).toBe(true);
+    expect(byKey.get("mandatesAverageDurationMonths")?.higherIsWorse).toBe(
+      true
+    );
+  });
+
+  it("les autres ratios n'ont pas higherIsWorse (défaut = falsy)", () => {
+    const audit = buildAuditContent({ answers: [] });
+    const inverted = new Set([
+      "chuteCompromisActePercent",
+      "mandatesAverageDurationMonths",
+    ]);
+    for (const r of audit.performanceChain.ratios) {
+      if (inverted.has(r.key)) continue;
+      expect(r.higherIsWorse ?? false).toBe(false);
+    }
   });
 });
 
@@ -449,11 +561,12 @@ describe("Bout-à-bout — agence fictive complète", () => {
       if (r.value !== null) expect(Number.isFinite(r.value)).toBe(true);
     }
 
-    // Note Google traitée sur 5
+    // Note Google traitée sur 5, sans benchmark (statut unknown)
     const googleScore = audit.performanceChain.ratios.find(
       (r) => r.key === "googleReviewsScore"
     );
     expect(googleScore?.unit).toBe("rating_5");
-    expect(googleScore?.status).toBe("above");
+    expect(googleScore?.status).toBe("unknown");
+    expect(googleScore?.benchmark).toBeNull();
   });
 });

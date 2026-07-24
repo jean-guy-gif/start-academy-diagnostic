@@ -24,6 +24,12 @@ import type { ServiceResult } from "@/lib/diagnostics/diagnostic-service";
 import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
 import { getRecommendationByDiagnosticId } from "@/lib/recommendations/recommendation-service";
 import type { ProposalGenerationResult } from "@/lib/ai/proposal-schema";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  classifyGenerationPreflight,
+  type PreflightAction,
+  type PreflightKind,
+} from "@/lib/proposals/proposal-preflight";
 
 /**
  * Vue client d'une proposition persistée. Contient l'objet Proposal
@@ -65,45 +71,87 @@ export interface ProposalOutcome {
   warnings: string[];
 }
 
+/**
+ * Métadonnées d'échec du preflight — permet à l'UI de rendre un CTA
+ * dédié (bouton « Recharger la page » pour session expirée, etc.).
+ * `null` = pas d'échec preflight (soit succès, soit échec plus tardif
+ * type POST/PUT dont l'UI utilise le message brut).
+ */
+export interface ProposalErrorContext {
+  kind: PreflightKind;
+  action: PreflightAction;
+}
+
+/**
+ * Vérifie la présence d'une session Supabase browser valide.
+ *   • `null` si le client n'est pas initialisé (env absente, mode dev)
+ *     — l'appelant laisse passer.
+ *   • `true` si `getSession()` renvoie une session non-null sans erreur.
+ *   • `false` sinon (session expirée / absente / erreur network).
+ */
+async function detectBrowserSession(): Promise<boolean | null> {
+  const client = createSupabaseBrowserClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client.auth.getSession();
+    if (error) return false;
+    return data.session !== null;
+  } catch {
+    return false;
+  }
+}
+
 export async function generateProposal(
   diagnosticId: string,
   recommendationId?: string
-): Promise<ServiceResult<ProposalOutcome | null>> {
-  // 1. Charger diagnostic + recommandation côté client (Supabase RLS-aware).
-  const summaryResult = await getDiagnosticSummary(diagnosticId);
-  if (!summaryResult.data) {
-    return {
-      data: null,
-      mode: summaryResult.mode,
-      error: summaryResult.error ?? "Diagnostic introuvable.",
-    };
+): Promise<
+  ServiceResult<ProposalOutcome | null> & {
+    errorContext?: ProposalErrorContext;
   }
+> {
+  // 0. Session Supabase browser — court-circuit si absente/expirée
+  //    pour éviter que l'UI affiche « Aucune recommandation » alors
+  //    que le vrai souci est l'auth.
+  const sessionPresent = await detectBrowserSession();
 
+  // 1. Charger diagnostic + recommandation côté client (Supabase RLS-aware).
+  //    Note : chaque service peut retourner data=null avec error=null
+  //    (fallback local vide, RLS silencieux) OU data=null avec error !== null
+  //    (erreur explicite). Le preflight distingue les deux.
+  const summaryResult = await getDiagnosticSummary(diagnosticId);
   const recommendationResult = await getRecommendationByDiagnosticId(
     diagnosticId
   );
-  if (!recommendationResult.data) {
+
+  const preflight = classifyGenerationPreflight({
+    sessionPresent,
+    summary: summaryResult,
+    reco: recommendationResult,
+  });
+  if (!preflight.ok) {
     return {
       data: null,
-      mode: recommendationResult.mode,
-      error:
-        recommendationResult.error ??
-        "Aucune recommandation disponible — lancez l'analyse avant la proposition.",
+      mode: summaryResult.mode,
+      error: preflight.message,
+      errorContext: { kind: preflight.kind, action: preflight.action },
     };
   }
 
+  // Preflight OK ⇒ `summaryResult.data` et `recommendationResult.data`
+  // sont non-nulls (contrat de `classifyGenerationPreflight`).
+  const summary = summaryResult.data!;
+  const recommendation = recommendationResult.data!;
+
   const supabaseRecommendationId =
-    recommendationId ??
-    recommendationResult.data.supabaseRecommendationId ??
-    null;
+    recommendationId ?? recommendation.supabaseRecommendationId ?? null;
 
   // 2. Générer via LLM (fallback heuristique côté serveur).
   const payload = {
     diagnosticId,
     recommendationId: supabaseRecommendationId ?? undefined,
-    diagnostic: summaryResult.data.diagnostic,
-    client: summaryResult.data.client,
-    recommendation: recommendationResult.data.recommendation,
+    diagnostic: summary.diagnostic,
+    client: summary.client,
+    recommendation: recommendation.recommendation,
   };
 
   let response: Response;

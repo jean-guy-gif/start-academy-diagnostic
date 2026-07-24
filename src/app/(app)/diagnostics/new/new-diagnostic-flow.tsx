@@ -329,6 +329,26 @@ export function NewDiagnosticFlow() {
   const currentDraft = currentQuestion
     ? drafts[currentQuestion.id] ?? EMPTY_DRAFT
     : EMPTY_DRAFT;
+
+  // Position du chapitre courant dans la séquence guidée : les
+  // questions couvrent Ch.3 → Ch.11, mais l'affichage montre
+  // « étape 1 sur 9 », « étape 2 sur 9 »… `orderedChapters` liste
+  // les chapitres réellement présents dans le filtre profil, dans
+  // l'ordre où ils apparaissent — la longueur n'est pas figée à 9
+  // si le filtre profil retire un chapitre.
+  const orderedChapters = useMemo(() => {
+    const seen: number[] = [];
+    for (const q of questions) {
+      if (q.chapter !== undefined && !seen.includes(q.chapter)) {
+        seen.push(q.chapter);
+      }
+    }
+    return seen;
+  }, [questions]);
+  const totalChapterSteps = orderedChapters.length;
+  const chapterStepPosition = currentQuestion?.chapter
+    ? orderedChapters.indexOf(currentQuestion.chapter) + 1
+    : 0;
   const progress =
     questions.length === 0 ? 0 : Math.round((savedCount / questions.length) * 100);
 
@@ -645,6 +665,8 @@ export function NewDiagnosticFlow() {
           onDraftChange={(patch) => setDraft(currentQuestion.id, patch)}
           onNext={() => persistAnswer({ skipped: false })}
           onSkip={() => persistAnswer({ skipped: true })}
+          stepPosition={chapterStepPosition}
+          totalSteps={totalChapterSteps}
         />
       )}
 
@@ -1093,6 +1115,14 @@ interface QuestionsStepProps {
   onDraftChange: (patch: Partial<AnswerDraft>) => void;
   onNext: () => void;
   onSkip: () => void;
+  /**
+   * Position du chapitre courant dans le parcours guidé (1-indexed) et
+   * nombre total de chapitres du parcours. Différent du numéro interne
+   * `question.chapter` (les questions couvrent Ch.3 → Ch.11, mais le
+   * parcours affiche « étape 1 sur 9 », « étape 2 sur 9 », …).
+   */
+  stepPosition: number;
+  totalSteps: number;
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -1124,11 +1154,17 @@ function QuestionsStep({
   onDraftChange,
   onNext,
   onSkip,
+  stepPosition,
+  totalSteps,
 }: QuestionsStepProps) {
   const questionId = question.id;
   const questionText = question.question;
   const category = question.category;
   const isOptional = question.required === false;
+  const chapterMeta = question.chapter ? getChapterMeta(question.chapter) : null;
+  const chapterLabel = chapterMeta
+    ? `${chapterMeta.title} · étape ${stepPosition} sur ${totalSteps}`
+    : null;
   return (
     <Card className="border-border/60 bg-white">
       <CardHeader className="space-y-4">
@@ -1137,9 +1173,12 @@ function QuestionsStep({
             <Badge variant="secondary" className="bg-[#eaf5ff] text-[#00527a]">
               {CATEGORY_LABEL[category] ?? category}
             </Badge>
-            {question.chapter && (
-              <Badge variant="outline" className="border-border/60 text-muted-foreground">
-                Ch.{question.chapter}
+            {chapterLabel && (
+              <Badge
+                variant="outline"
+                className="border-border/60 text-muted-foreground"
+              >
+                {chapterLabel}
                 {question.subsection ? ` · ${question.subsection}` : ""}
               </Badge>
             )}

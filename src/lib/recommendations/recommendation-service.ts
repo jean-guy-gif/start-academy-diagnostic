@@ -24,6 +24,7 @@ import type {
   AnalyzeResult,
   Recommendation,
 } from "@/lib/ai/recommendation-schema";
+import { isLocalFallbackAllowed } from "@/lib/storage/local-fallback";
 
 export interface StoredRecommendation extends AnalyzeResult {
   id: string;
@@ -43,6 +44,9 @@ interface LocalStore {
 }
 
 function readLocal(): LocalStore {
+  // Fail-closed : hors mode local, aucune lecture localStorage — les
+  // données métier ne doivent JAMAIS resurgir en preprod/production.
+  if (!isLocalFallbackAllowed()) return { items: [] };
   if (typeof window === "undefined") return { items: [] };
   try {
     const raw = window.localStorage.getItem(LS_KEY);
@@ -55,6 +59,8 @@ function readLocal(): LocalStore {
 }
 
 function writeLocal(store: LocalStore): void {
+  // Fail-closed : hors mode local, aucune écriture localStorage.
+  if (!isLocalFallbackAllowed()) return;
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(LS_KEY, JSON.stringify(store));

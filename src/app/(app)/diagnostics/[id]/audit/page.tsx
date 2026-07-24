@@ -32,6 +32,12 @@ export default async function AuditPage({ params }: Props) {
   const access = await assertCanAccessDiagnostic(profile, diagnosticId);
   if (!access.ok) redirect("/forbidden");
 
+  // Bypass RLS via service_role — autorisé UNIQUEMENT parce que
+  // l'identité du user et son droit d'accès à ce diagnostic viennent
+  // d'être vérifiés par `assertCanAccessDiagnostic` juste au-dessus
+  // (RPC `can_user_access_diagnostic`, ownership + admin bypass).
+  // Ordre non permutable — cf. docs/rls-hardening-plan.md §4.1
+  // (« Service role abuse » : jamais de bypass avant validation).
   const supabase = createSupabaseAdminClient();
   if (!supabase) notFound();
 

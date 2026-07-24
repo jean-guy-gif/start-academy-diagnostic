@@ -118,7 +118,7 @@ export function AuditView(props: AuditViewProps) {
             Aucun audit à afficher
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Complétez le diagnostic pour générer l&apos;audit.
+            Complétez votre diagnostic pour générer l&apos;audit.
           </p>
           <Link
             href={`/diagnostics/${props.diagnosticId}`}
@@ -238,7 +238,7 @@ export function AuditView(props: AuditViewProps) {
             }
             &nbsp;»
             <footer className="mt-2 text-xs not-italic text-muted-foreground">
-              — Priorités énoncées par le dirigeant
+              — Vos priorités, dans vos mots
             </footer>
           </blockquote>
         )}
@@ -329,7 +329,7 @@ export function AuditView(props: AuditViewProps) {
                   : "Au-dessus du repère"
                 : r.status === "below"
                 ? r.higherIsWorse
-                  ? "Sous contrôle"
+                  ? "Dans le repère"
                   : "Sous le repère"
                 : "Non mesuré";
             return (
@@ -431,7 +431,7 @@ export function AuditView(props: AuditViewProps) {
               className="text-xs font-semibold uppercase tracking-wider"
               style={{ color: "var(--color-brand-deep)" }}
             >
-              Verbatims dirigeant
+              Vos verbatims
             </h3>
             <div className="mt-3 space-y-3">
               {props.audit.practices.verbatims.map((v) => (
@@ -465,7 +465,7 @@ export function AuditView(props: AuditViewProps) {
             Priorités
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            La proposition commerciale répondra point par point à ces priorités.
+            Votre proposition commerciale répondra point par point à ces priorités.
           </p>
           <ol className="mt-6 space-y-4">
             {props.audit.priorities.map((p) => {

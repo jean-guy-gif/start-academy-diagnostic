@@ -25,6 +25,7 @@ import {
   type StoredProposal,
 } from "@/lib/proposals/proposal-service";
 import { logActivityFromClient } from "@/lib/activity/log-from-client";
+import { isLocalFallbackAllowed } from "@/lib/storage/local-fallback";
 
 // ---------------------------------------------------------------------------
 // Types publics
@@ -72,6 +73,8 @@ interface LocalStore {
 }
 
 function readLocal(): LocalStore {
+  // Fail-closed : hors mode local, aucune lecture localStorage.
+  if (!isLocalFallbackAllowed()) return { items: [] };
   if (typeof window === "undefined") return { items: [] };
   try {
     const raw = window.localStorage.getItem(LS_KEY);
@@ -84,6 +87,8 @@ function readLocal(): LocalStore {
 }
 
 function writeLocal(store: LocalStore): void {
+  // Fail-closed : hors mode local, aucune écriture localStorage.
+  if (!isLocalFallbackAllowed()) return;
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(LS_KEY, JSON.stringify(store));
@@ -517,6 +522,8 @@ interface ParticipantsStore {
 }
 
 function readParticipants(): ParticipantsStore {
+  // Fail-closed : hors mode local, aucune lecture localStorage.
+  if (!isLocalFallbackAllowed()) return { items: [] };
   if (typeof window === "undefined") return { items: [] };
   try {
     const raw = window.localStorage.getItem(LS_PARTICIPANTS_KEY);
@@ -529,6 +536,8 @@ function readParticipants(): ParticipantsStore {
 }
 
 function writeParticipants(store: ParticipantsStore): void {
+  // Fail-closed : hors mode local, aucune écriture localStorage.
+  if (!isLocalFallbackAllowed()) return;
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(LS_PARTICIPANTS_KEY, JSON.stringify(store));

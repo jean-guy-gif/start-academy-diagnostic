@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Rajdhani, Montserrat } from "next/font/google";
 import "./globals.css";
 
+import { FallbackPurger } from "@/components/system/fallback-purger";
+
 const rajdhani = Rajdhani({
   variable: "--font-rajdhani",
   subsets: ["latin"],
@@ -33,6 +35,7 @@ export default function RootLayout({
       className={`${rajdhani.variable} ${montserrat.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground font-sans">
+        <FallbackPurger />
         {children}
       </body>
     </html>

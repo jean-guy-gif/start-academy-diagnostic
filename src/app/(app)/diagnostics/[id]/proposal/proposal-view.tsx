@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import {
   generateProposal,
   getProposalByDiagnosticId,
+  type ProposalErrorContext,
   type StoredProposal,
 } from "@/lib/proposals/proposal-service";
 import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
@@ -47,7 +48,18 @@ type Status =
   | { kind: "loading" }
   | { kind: "generating" }
   | { kind: "ready"; stored: StoredProposal; warnings: string[] }
-  | { kind: "error"; message: string };
+  | {
+      kind: "error";
+      message: string;
+      /**
+       * Contexte d'échec preflight (session/lecture/…). Permet de
+       * rendre un CTA dédié : bouton « Recharger la page » quand
+       * `action === 'reload'`, « Réessayer » sinon.
+       */
+      errorContext?: ProposalErrorContext;
+    };
+
+const REGEN_TOAST_MS = 6_000;
 
 interface Props {
   diagnosticId: string;
@@ -58,6 +70,16 @@ export function ProposalView({ diagnosticId }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [creatingSession, setCreatingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  // Toast horodaté après un PUT réussi. `null` = pas de toast en cours.
+  // Auto-effacé après REGEN_TOAST_MS.
+  const [lastRegeneratedAt, setLastRegeneratedAt] = useState<string | null>(
+    null
+  );
+  useEffect(() => {
+    if (!lastRegeneratedAt) return;
+    const t = setTimeout(() => setLastRegeneratedAt(null), REGEN_TOAST_MS);
+    return () => clearTimeout(t);
+  }, [lastRegeneratedAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +103,7 @@ export function ProposalView({ diagnosticId }: Props) {
       setStatus({
         kind: "error",
         message: result.error ?? "La génération a échoué.",
+        errorContext: result.errorContext,
       });
       return;
     }
@@ -89,7 +112,14 @@ export function ProposalView({ diagnosticId }: Props) {
       stored: result.data.stored,
       warnings: result.data.warnings,
     });
+    // Toast horodaté — la date visible en tête (SourceBadge) reflète
+    // désormais `stored.generatedAt` frais côté serveur.
+    setLastRegeneratedAt(result.data.stored.generatedAt);
   }, [diagnosticId]);
+
+  const handleReloadPage = useCallback(() => {
+    if (typeof window !== "undefined") window.location.reload();
+  }, []);
 
   const handleCreateSession = useCallback(async () => {
     if (creatingSession) return;
@@ -146,9 +176,32 @@ export function ProposalView({ diagnosticId }: Props) {
               Diagnostic <code className="text-foreground/80">{diagnosticId}</code>
             </p>
           </div>
-          {status.kind === "ready" && <SourceBadge stored={status.stored} />}
+          {status.kind === "ready" && (
+            <div className="flex flex-col items-end gap-1">
+              <SourceBadge stored={status.stored} />
+              <p
+                className="text-[11px] text-muted-foreground"
+                data-testid="proposal-header-generated-at"
+              >
+                Générée le{" "}
+                {new Date(status.stored.generatedAt).toLocaleString("fr-FR")}
+              </p>
+            </div>
+          )}
         </div>
       </div>
+
+      {lastRegeneratedAt && (
+        <div
+          role="status"
+          data-testid="regen-toast"
+          className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+        >
+          <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+          Proposition régénérée à{" "}
+          {new Date(lastRegeneratedAt).toLocaleTimeString("fr-FR")}
+        </div>
+      )}
 
       {status.kind === "loading" && (
         <Card className="border-border/60 bg-white">
@@ -210,16 +263,39 @@ export function ProposalView({ diagnosticId }: Props) {
               <p className="text-red-800/80">{status.message}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={runGeneration}
-            className={cn(
-              buttonVariants({ variant: "outline", size: "default" }),
-              "h-10 px-4 border-[#00527a]/20 text-[#00527a] hover:bg-[#eaf5ff]"
-            )}
-          >
-            Réessayer
-          </button>
+          {status.errorContext?.action === "reload" ? (
+            <button
+              type="button"
+              onClick={handleReloadPage}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "default" }),
+                "h-10 px-4 border-[#00527a]/20 text-[#00527a] hover:bg-[#eaf5ff]"
+              )}
+            >
+              Recharger la page
+            </button>
+          ) : status.errorContext?.action === "analyze" ? (
+            <Link
+              href={`/diagnostics/${diagnosticId}/recommendation`}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "default" }),
+                "h-10 px-4 border-[#00527a]/20 text-[#00527a] hover:bg-[#eaf5ff]"
+              )}
+            >
+              Lancer l&apos;analyse
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={runGeneration}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "default" }),
+                "h-10 px-4 border-[#00527a]/20 text-[#00527a] hover:bg-[#eaf5ff]"
+              )}
+            >
+              Réessayer
+            </button>
+          )}
         </div>
       )}
 

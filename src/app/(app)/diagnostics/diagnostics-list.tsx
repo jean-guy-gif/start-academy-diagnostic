@@ -14,6 +14,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { isAuditAvailable } from "@/lib/audit/decide-audit-render";
 import {
   Card,
   CardContent,
@@ -211,13 +212,24 @@ export function DiagnosticsList() {
                         {formatDate(item.diagnostic.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link
-                          href={`/diagnostics/${item.diagnostic.id}/recommendation`}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-[#00527a] hover:underline"
-                        >
-                          Voir recommandation
-                          <ArrowRight className="h-3 w-3" />
-                        </Link>
+                        <div className="flex flex-col items-end gap-1">
+                          {isAuditAvailable(item.answerCount) && (
+                            <Link
+                              href={`/diagnostics/${item.diagnostic.id}/audit`}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-[#00527a] hover:underline"
+                            >
+                              Voir l&apos;audit
+                              <ArrowRight className="h-3 w-3" />
+                            </Link>
+                          )}
+                          <Link
+                            href={`/diagnostics/${item.diagnostic.id}/recommendation`}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-[#00527a] hover:underline"
+                          >
+                            Voir recommandation
+                            <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

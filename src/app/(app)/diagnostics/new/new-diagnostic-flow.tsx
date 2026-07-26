@@ -8,6 +8,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Cloud,
+  FileText,
   HardDrive,
   Loader2,
   SkipForward,
@@ -15,6 +16,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { isAuditAvailable } from "@/lib/audit/decide-audit-render";
 import {
   Card,
   CardContent,
@@ -1932,7 +1934,7 @@ function SummaryStep({ form, summary, diagnosticId, clientId }: SummaryStepProps
         </CardContent>
       </Card>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href="/diagnostics"
           className={cn(
@@ -1943,29 +1945,43 @@ function SummaryStep({ form, summary, diagnosticId, clientId }: SummaryStepProps
           <ArrowLeft className="h-4 w-4" />
           Retour aux diagnostics
         </Link>
-        {diagnosticId ? (
-          <Link
-            href={`/diagnostics/${diagnosticId}/recommendation`}
-            className={cn(
-              buttonVariants({ size: "default" }),
-              "h-10 px-5 bg-[#3ea9ff] text-white hover:bg-[#3ea9ff]/90"
-            )}
-          >
-            Voir la recommandation
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className={cn(
-              buttonVariants({ size: "default" }),
-              "h-10 px-5 opacity-60 cursor-not-allowed"
-            )}
-          >
-            Voir la recommandation
-          </button>
-        )}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          {diagnosticId && isAuditAvailable(stats.answered) && (
+            <Link
+              href={`/diagnostics/${diagnosticId}/audit`}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "default" }),
+                "h-10 px-4 border-[#00527a]/20 text-[#00527a] hover:bg-[#eaf5ff]"
+              )}
+            >
+              <FileText className="h-4 w-4" />
+              Voir l&apos;audit
+            </Link>
+          )}
+          {diagnosticId ? (
+            <Link
+              href={`/diagnostics/${diagnosticId}/recommendation`}
+              className={cn(
+                buttonVariants({ size: "default" }),
+                "h-10 px-5 bg-[#3ea9ff] text-white hover:bg-[#3ea9ff]/90"
+              )}
+            >
+              Voir la recommandation
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className={cn(
+                buttonVariants({ size: "default" }),
+                "h-10 px-5 opacity-60 cursor-not-allowed"
+              )}
+            >
+              Voir la recommandation
+            </button>
+          )}
+        </div>
       </div>
 
       {diagnosticId && (

@@ -19,6 +19,19 @@
 
 import type { AuditContent } from "./build-audit-content";
 
+/**
+ * Prédicat pur — un audit peut-il être généré pour ce diagnostic ?
+ * Source unique de vérité pour tous les CTA « Voir l'audit » du
+ * parcours (liste, wizard, page recommandation) — garantit l'alignement
+ * avec l'état empty/audit décidé ci-dessous par `decideAuditRender`.
+ *
+ * Règle : au moins une réponse guidée persistée. Toute la logique de
+ * seuil vit ici — ne PAS dupliquer un `answerCount > 0` inline.
+ */
+export function isAuditAvailable(answeredCount: number): boolean {
+  return answeredCount > 0;
+}
+
 export type AuditRenderKind = "empty" | "audit";
 
 export interface AuditRenderDecision {
@@ -36,7 +49,7 @@ export interface AuditRenderDecision {
 export function decideAuditRender(
   audit: AuditContent
 ): AuditRenderDecision {
-  if (audit.completeness.answeredCount === 0) {
+  if (!isAuditAvailable(audit.completeness.answeredCount)) {
     return {
       kind: "empty",
       completenessLabel: null,

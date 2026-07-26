@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Cloud,
   Cpu,
+  FileText,
   HardDrive,
   Loader2,
   Sparkles,
@@ -253,7 +254,12 @@ const SKILL_LEVEL_LABEL: Record<string, string> = {
 
 function RecommendationDetails({ stored, warnings, onReanalyze }: DetailsProps) {
   const rec = stored.recommendation;
+  const auditHref = `/diagnostics/${stored.diagnosticId}/audit`;
   const proposalHref = `/diagnostics/${stored.diagnosticId}/proposal`;
+  // La recommandation existante implique qu'il y a des réponses guidées
+  // persistées (le moteur les consomme). Le CTA audit est donc affiché
+  // sans re-tester `isAuditAvailable` — identique en pratique, mais évite
+  // un aller-retour de chargement supplémentaire.
   return (
     <div className="space-y-6">
       {warnings.length > 0 && (
@@ -420,7 +426,7 @@ function RecommendationDetails({ stored, warnings, onReanalyze }: DetailsProps) 
         tone="amber"
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           type="button"
           onClick={onReanalyze}
@@ -432,16 +438,28 @@ function RecommendationDetails({ stored, warnings, onReanalyze }: DetailsProps) 
           <Sparkles className="h-4 w-4" />
           Relancer l&apos;analyse
         </button>
-        <Link
-          href={proposalHref}
-          className={cn(
-            buttonVariants({ size: "default" }),
-            "h-10 px-5 bg-[#3ea9ff] text-white hover:bg-[#3ea9ff]/90"
-          )}
-        >
-          Créer la proposition
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Link
+            href={auditHref}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "default" }),
+              "h-10 px-4 border-[#00527a]/20 text-[#00527a] hover:bg-[#eaf5ff]"
+            )}
+          >
+            <FileText className="h-4 w-4" />
+            Voir l&apos;audit
+          </Link>
+          <Link
+            href={proposalHref}
+            className={cn(
+              buttonVariants({ size: "default" }),
+              "h-10 px-5 bg-[#3ea9ff] text-white hover:bg-[#3ea9ff]/90"
+            )}
+          >
+            Créer la proposition
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
     </div>
   );

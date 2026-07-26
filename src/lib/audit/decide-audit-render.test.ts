@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AuditContent } from "./build-audit-content";
-import { decideAuditRender } from "./decide-audit-render";
+import { decideAuditRender, isAuditAvailable } from "./decide-audit-render";
 
 function makeAudit(overrides: Partial<AuditContent> = {}): AuditContent {
   return {
@@ -21,6 +21,40 @@ function makeAudit(overrides: Partial<AuditContent> = {}): AuditContent {
     ...overrides,
   };
 }
+
+describe("isAuditAvailable — gate CTA parcours diagnostic", () => {
+  it("0 réponse → indisponible", () => {
+    expect(isAuditAvailable(0)).toBe(false);
+  });
+
+  it("1 réponse → disponible (seuil identique à decideAuditRender)", () => {
+    expect(isAuditAvailable(1)).toBe(true);
+  });
+
+  it("N réponses → disponible", () => {
+    expect(isAuditAvailable(47)).toBe(true);
+  });
+
+  it("aligné avec decideAuditRender : answeredCount=0 ⇔ kind=empty", () => {
+    const zeroAudit: AuditContent = {
+      completeness: {
+        answeredCount: 0,
+        totalCount: 71,
+        byBlock: {
+          performance_chain: { answeredCount: 0, totalCount: 30 },
+          practices: { answeredCount: 0, totalCount: 41 },
+        },
+      },
+      performanceChain: { ratios: [] },
+      practices: { flags: [], verbatims: [] },
+      alerts: [],
+      summary: { keyMetrics: [], topAlerts: [] },
+      priorities: [],
+    };
+    expect(isAuditAvailable(zeroAudit.completeness.answeredCount)).toBe(false);
+    expect(decideAuditRender(zeroAudit).kind).toBe("empty");
+  });
+});
 
 describe("decideAuditRender — état vide vs audit", () => {
   it("aucune réponse → kind=empty, aucune mention, pas d'exergue priorités", () => {

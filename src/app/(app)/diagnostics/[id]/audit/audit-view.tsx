@@ -162,9 +162,8 @@ export function AuditView(props: AuditViewProps) {
           <div className="mb-2 flex items-center gap-2">
             <AlertCircle className="h-4 w-4 text-amber-700" />
             <p className="font-medium">
-              {props.audit.internalAlerts.length} question
-              {props.audit.internalAlerts.length > 1 ? "s" : ""} clé
-              {props.audit.internalAlerts.length > 1 ? "s" : ""} sans réponse
+              À compléter avant la restitution — n&apos;apparaît pas dans le
+              document imprimé
             </p>
           </div>
           <ul className="ml-6 list-disc space-y-1 text-amber-900/85">
@@ -174,10 +173,6 @@ export function AuditView(props: AuditViewProps) {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] text-amber-800/70">
-            Rappel : cet encart est visible uniquement à l&apos;écran, jamais
-            dans le document remis au dirigeant.
-          </p>
         </div>
       )}
 

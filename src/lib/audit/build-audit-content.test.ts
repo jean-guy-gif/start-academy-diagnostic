@@ -315,30 +315,18 @@ describe("Practices — flags & verbatims", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Dédup pige — prospecting-pige-tool + tools-pige
+// Verbatim pige_tool — source unique Ch.10 après consolidation
+// (l'ancien doublon Ch.3 `prospecting-pige-tool` a été supprimé du
+// questionnaire ; le dédup verbatim par « valeur la plus longue » n'est
+// donc plus exercé — le mécanisme reste dans buildVerbatims mais ne
+// s'applique plus qu'à une seule source ici.)
 // ---------------------------------------------------------------------------
 
-describe("Dédup pige_tool — prospecting-pige-tool + tools-pige fusionnés", () => {
-  it("les 2 renseignés → 1 seul verbatim `pige_tool`, valeur la plus longue gagne", () => {
-    const answers = [
-      makeAnswer("prospecting-pige-tool", "Meilleursagents"),
-      makeAnswer("tools-pige", "Meilleursagents Pro + veille manuelle"),
-    ];
-    const audit = buildAuditContent({ answers });
-    const pige = audit.practices.verbatims.filter(
-      (v) => v.key === "pige_tool"
-    );
-    expect(pige).toHaveLength(1);
-    expect(pige[0].content).toBe("Meilleursagents Pro + veille manuelle");
-    expect(pige[0].sourceQuestionIds.sort()).toEqual([
-      "prospecting-pige-tool",
-      "tools-pige",
-    ]);
-  });
-
-  it("une seule renseignée → verbatim présent, seule source citée", () => {
-    const answers = [makeAnswer("tools-pige", "Périclès Web")];
-    const audit = buildAuditContent({ answers });
+describe("Verbatim pige_tool — source unique tools-pige (Ch.10)", () => {
+  it("renseigné → verbatim présent, seule source citée", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("tools-pige", "Périclès Web")],
+    });
     const pige = audit.practices.verbatims.filter(
       (v) => v.key === "pige_tool"
     );
@@ -347,7 +335,7 @@ describe("Dédup pige_tool — prospecting-pige-tool + tools-pige fusionnés", (
     expect(pige[0].sourceQuestionIds).toEqual(["tools-pige"]);
   });
 
-  it("aucune renseignée → aucun verbatim pige_tool", () => {
+  it("non renseigné → aucun verbatim pige_tool", () => {
     const audit = buildAuditContent({ answers: [] });
     const pige = audit.practices.verbatims.filter(
       (v) => v.key === "pige_tool"
@@ -857,7 +845,7 @@ describe("Complétude — global + par bloc", () => {
     ];
     const audit = buildAuditContent({ answers });
     expect(audit.completeness.answeredCount).toBe(2);
-    expect(audit.completeness.totalCount).toBe(71);
+    expect(audit.completeness.totalCount).toBe(69);
   });
 
   it("répartition par bloc cohérente (somme = total)", () => {
@@ -872,7 +860,7 @@ describe("Complétude — global + par bloc", () => {
     expect(perf.answeredCount + prac.answeredCount).toBe(
       audit.completeness.answeredCount
     );
-    expect(perf.totalCount + prac.totalCount).toBe(71);
+    expect(perf.totalCount + prac.totalCount).toBe(69);
     // 2 des 3 réponses sont bloc performance_chain, 1 bloc practices.
     expect(perf.answeredCount).toBe(2);
     expect(prac.answeredCount).toBe(1);

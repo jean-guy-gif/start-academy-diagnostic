@@ -132,6 +132,22 @@ export interface DiagnosticQuestion {
   /** Choix disponibles pour type = "choice" / "multichoice". */
   choices?: string[];
   /**
+   * Libellés humains à afficher pour un `yesno` — remplace « Oui » /
+   * « Non » à l'écran (le flux guidé) et dans l'audit. `« Ne sait pas »`
+   * reste inchangé. Fallback : « Oui » / « Non » quand absent.
+   * Champ optionnel : ne remplir que quand la formulation métier gagne
+   * à s'écarter du binaire (ex. « Systématique » / « Ponctuel »).
+   */
+  answerLabels?: { yes: string; no: string };
+  /**
+   * Libellé humain par valeur technique pour `choice` / `multichoice` —
+   * ex. `{ r1_r2: "R1/R2", bien_ici: "Bien'ici" }`. Utilisé à l'écran
+   * ET dans l'audit. Fallback : la valeur technique brute (comportement
+   * historique). Une clé absente → fallback silencieux pour cette valeur
+   * uniquement (les autres valeurs mappées s'affichent normalement).
+   */
+  optionLabels?: Record<string, string>;
+  /**
    * Question conditionnelle — n'est affichée que si la réponse à
    * `questionId` est égale à `equals` (string) ou fait partie de
    * `equals` (string[]). Non-généralisation : cette forme reste

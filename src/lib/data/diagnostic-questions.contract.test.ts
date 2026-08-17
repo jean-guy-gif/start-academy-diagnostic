@@ -20,9 +20,11 @@ import { diagnosticQuestions } from "./diagnostic-questions";
  * baseline consciemment (et de gérer la migration des données).
  */
 
-// Baseline — 71 questions, 9 chapitres. Chaque entrée = [id, chapter, type].
+// Baseline — 69 questions, 9 chapitres. Chaque entrée = [id, chapter, type].
+// Note : passage 71 → 69 par retrait des doublons Ch.3/Ch.4 (les 2 outils
+// pige & estimation ne vivent plus qu'en Ch.10 après consolidation).
 const BASELINE: ReadonlyArray<readonly [string, number, string]> = [
-  // Ch.3 — Prospection & entrées vendeurs (9)
+  // Ch.3 — Prospection & entrées vendeurs (8)
   ["prospecting-methods", 3, "multichoice"],
   ["prospecting-who", 3, "choice"],
   ["perf-contacts-week", 3, "int"],
@@ -31,15 +33,13 @@ const BASELINE: ReadonlyArray<readonly [string, number, string]> = [
   ["perf-rate-rdv", 3, "percent"],
   ["prospecting-script", 3, "yesno"],
   ["skill-prospection", 3, "yesno"],
-  ["prospecting-pige-tool", 3, "text"],
-  // Ch.4 — RDV vendeur (10)
+  // Ch.4 — RDV vendeur (9)
   ["seller-meetings-per-month", 4, "int"],
   ["perf-rate-estimation", 4, "percent"],
   ["seller-meeting-format", 4, "choice"],
   ["seller-discovery-formalized", 4, "yesno"],
   ["estimation-delivery-delay", 4, "choice"],
   ["seller-written-valuation", 4, "yesno"],
-  ["estimation-tool", 4, "text"],
   ["skill-qualification", 4, "yesno"],
   ["skill-estimation", 4, "yesno"],
   ["skill-objections", 4, "yesno"],
@@ -105,9 +105,9 @@ const BASELINE: ReadonlyArray<readonly [string, number, string]> = [
 ];
 
 describe("Contrat anti-dérive diagnosticQuestions (chantier reformulation)", () => {
-  it("le nombre total de questions reste 71", () => {
+  it("le nombre total de questions reste 69 (post-consolidation doublons pige/estimation)", () => {
     expect(diagnosticQuestions).toHaveLength(BASELINE.length);
-    expect(diagnosticQuestions).toHaveLength(71);
+    expect(diagnosticQuestions).toHaveLength(69);
   });
 
   it("l'ensemble des IDs est strictement égal à la baseline (aucun ajout, aucun retrait, aucun renommage)", () => {

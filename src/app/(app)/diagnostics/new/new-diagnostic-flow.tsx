@@ -1295,6 +1295,11 @@ interface QuestionInputProps {
 function QuestionInput({ question, value, onChange }: QuestionInputProps) {
   const type = question.type ?? "text";
 
+  // Libellé humain d'une valeur technique (choice / multichoice). Fallback
+  // silencieux sur la valeur brute quand aucun mapping n'est fourni.
+  const optionLabel = (raw: string) =>
+    question.optionLabels?.[raw] ?? raw;
+
   if (type === "choice") {
     const choices = question.choices ?? [];
     return (
@@ -1313,7 +1318,7 @@ function QuestionInput({ question, value, onChange }: QuestionInputProps) {
               )}
             >
               <RadioGroupItem value={c} />
-              <span>{c}</span>
+              <span>{optionLabel(c)}</span>
             </label>
           ))}
         </RadioGroup>
@@ -1322,7 +1327,15 @@ function QuestionInput({ question, value, onChange }: QuestionInputProps) {
   }
 
   if (type === "yesno") {
-    const options = ["oui", "non", "ne_sait_pas"];
+    // answerLabels remplace « Oui / Non » à l'écran quand présent
+    // (« Ne sait pas » toujours inchangé — cf. spec produit).
+    const yesLabel = question.answerLabels?.yes ?? "Oui";
+    const noLabel = question.answerLabels?.no ?? "Non";
+    const options: Array<{ value: string; label: string }> = [
+      { value: "oui", label: yesLabel },
+      { value: "non", label: noLabel },
+      { value: "ne_sait_pas", label: "Ne sait pas" },
+    ];
     return (
       <FormField label="Réponse" htmlFor={`ans-${question.id}`}>
         <RadioGroup
@@ -1332,16 +1345,14 @@ function QuestionInput({ question, value, onChange }: QuestionInputProps) {
         >
           {options.map((opt) => (
             <label
-              key={opt}
+              key={opt.value}
               className={cn(
                 "flex cursor-pointer items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm",
-                value === opt && "border-[#3ea9ff] bg-[#eaf5ff]/60"
+                value === opt.value && "border-[#3ea9ff] bg-[#eaf5ff]/60"
               )}
             >
-              <RadioGroupItem value={opt} />
-              <span>
-                {opt === "oui" ? "Oui" : opt === "non" ? "Non" : "Ne sait pas"}
-              </span>
+              <RadioGroupItem value={opt.value} />
+              <span>{opt.label}</span>
             </label>
           ))}
         </RadioGroup>
@@ -1378,7 +1389,7 @@ function QuestionInput({ question, value, onChange }: QuestionInputProps) {
                 checked={selected.has(c)}
                 onCheckedChange={() => toggle(c)}
               />
-              <span>{c}</span>
+              <span>{optionLabel(c)}</span>
             </label>
           ))}
         </div>

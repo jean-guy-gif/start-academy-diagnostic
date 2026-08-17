@@ -119,17 +119,6 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "yesno",
     required: false,
   },
-  {
-    id: "prospecting-pige-tool",
-    chapter: 3,
-    category: "prospecting",
-    profile: "all",
-    question: "D'ailleurs, pour piger, ils s'appuient sur quoi comme outil ?",
-    hint: "Noter l'outil ou \"aucun / manuel\". Même donnée que la question pige du chapitre Outils : si déjà répondue, recopier sans reposer la question.",
-    type: "text",
-    required: false,
-    showIf: { questionId: "prospecting-who", equals: ["tous", "certains"] },
-  },
   // -------------------------------------------------------------------------
   // Chapitre 4
   // -------------------------------------------------------------------------
@@ -197,17 +186,6 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = un avis de valeur écrit est remis systématiquement. Oral ou \"parfois\" = Non.",
     type: "yesno",
     required: false,
-  },
-  {
-    id: "estimation-tool",
-    chapter: 4,
-    category: "seller_meeting",
-    profile: "all",
-    question: "Et pour construire vos estimations, vous vous appuyez sur quoi aujourd'hui ?",
-    hint: "Noter l'outil (ou \"aucun / expérience\"). Relancer : \"et vous en êtes contents ?\" — noter le ressenti s'il s'exprime.",
-    type: "text",
-    required: true,
-    alimente: ["Fiabilité prix de rentrée", "Croisement Ch.10"],
   },
   {
     id: "skill-qualification",
@@ -560,8 +538,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     question: "Pour estimer, vous vous appuyez sur quoi ?",
     type: "text",
     required: false,
-    prefillFrom: { questionId: "estimation-tool" },
-    hint: "Noter l'outil ou \"aucun / expérience\". Recouper avec la réponse du chapitre RDV vendeur si déjà posée.",
+    hint: "Noter l'outil ou \"aucun / expérience\".",
   },
   {
     id: "tools-pige",
@@ -571,7 +548,6 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     question: "Et côté pige — vous avez un outil qui surveille le marché, ou c'est manuel ?",
     type: "text",
     required: false,
-    prefillFrom: { questionId: "prospecting-pige-tool" },
     hint: "Noter l'outil ou \"aucun\". \"On regarde Leboncoin de temps en temps\" = aucun.",
   },
   {

@@ -17,7 +17,7 @@
  * l'audit dans son ensemble qui est conditionnelle, pas les blocs.
  */
 
-import type { AuditContent } from "./build-audit-content";
+import type { AuditContent, AuditRatio } from "./build-audit-content";
 
 /**
  * Prédicat pur — un audit peut-il être généré pour ce diagnostic ?
@@ -44,6 +44,63 @@ export interface AuditRenderDecision {
    * plutôt qu'un placeholder.
    */
   showPrioritiesQuote: boolean;
+}
+
+/**
+ * Décision de rendu d'un ratio — trois cas distincts, jamais mélangés :
+ *   • `with_benchmark` — valeur ET repère présents → afficher la valeur
+ *     et un badge de statut vs benchmark (au-dessus / sous / dans le
+ *     repère selon `higherIsWorse`).
+ *   • `value_only` — valeur présente MAIS aucun repère → afficher la
+ *     valeur seule, **aucune** mention de statut (pas de « Non mesuré »
+ *     sous un chiffre qui existe).
+ *   • `no_data` — pas de réponse → afficher « Non renseigné », aucun
+ *     chiffre, aucun statut.
+ */
+export type RatioDisplayKind = "with_benchmark" | "value_only" | "no_data";
+
+export interface RatioDisplayDecision {
+  kind: RatioDisplayKind;
+  /**
+   * `true` si le badge de statut doit être affiché. Toujours `false`
+   * pour `value_only` et `no_data`. Le libellé exact du badge (« Au-
+   * dessus du repère », « Dans le repère », « À surveiller », …) reste
+   * la responsabilité du composant view — cette fonction dit seulement
+   * s'il doit apparaître.
+   */
+  showStatusBadge: boolean;
+  /** `true` si un chiffre doit être affiché (les 2 premiers cas). */
+  showValue: boolean;
+  /**
+   * Texte à afficher quand `showValue === false` (seulement pour
+   * `no_data`). `null` sinon.
+   */
+  emptyValueText: string | null;
+}
+
+export function decideRatioDisplay(ratio: AuditRatio): RatioDisplayDecision {
+  if (ratio.status === "no_data") {
+    return {
+      kind: "no_data",
+      showStatusBadge: false,
+      showValue: false,
+      emptyValueText: "Non renseigné",
+    };
+  }
+  if (ratio.status === "no_benchmark") {
+    return {
+      kind: "value_only",
+      showStatusBadge: false,
+      showValue: true,
+      emptyValueText: null,
+    };
+  }
+  return {
+    kind: "with_benchmark",
+    showStatusBadge: true,
+    showValue: true,
+    emptyValueText: null,
+  };
 }
 
 export function decideAuditRender(

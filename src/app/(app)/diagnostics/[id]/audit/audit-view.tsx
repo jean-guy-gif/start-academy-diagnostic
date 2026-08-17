@@ -1,9 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
+import { AlertCircle, ArrowLeft, FileText } from "lucide-react";
 
 import type { AuditContent } from "@/lib/audit/build-audit-content";
-import { decideAuditRender } from "@/lib/audit/decide-audit-render";
+import {
+  decideAuditRender,
+  decideRatioDisplay,
+} from "@/lib/audit/decide-audit-render";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +50,19 @@ function formatMetricValue(
   }
 }
 
+/**
+ * Les alertes internes issues de `missing_required_data:*` arrivent
+ * avec un libellé long « Donnée obligatoire manquante — <texte de la
+ * question> ». On extrait juste le texte de la question pour l'encart
+ * commercial (l'entête « N questions clés sans réponse » porte déjà le
+ * verbe et la sévérité).
+ */
+function formatInternalAlertShort(label: string): string {
+  const sep = " — ";
+  const idx = label.indexOf(sep);
+  return idx >= 0 ? label.slice(idx + sep.length) : label;
+}
+
 const THEME_LABEL: Record<string, string> = {
   prospecting_setup: "Prospection — dispositif",
   seller_rituals: "RDV vendeur — rituels",
@@ -57,16 +73,6 @@ const THEME_LABEL: Record<string, string> = {
   tools_ai: "Outils & IA",
   management: "Management & pilotage",
 };
-
-function formatFlagValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (value === true) return "Oui";
-  if (value === false) return "Non";
-  if (Array.isArray(value)) {
-    return value.length > 0 ? value.join(", ") : "—";
-  }
-  return String(value);
-}
 
 function severityStyles(severity: "info" | "warning" | "error"): {
   border: string;
@@ -147,6 +153,28 @@ export function AuditView(props: AuditViewProps) {
         </Link>
         <PrintButton />
       </div>
+
+      {/* Encart interne commercial — masqué en print, JAMAIS dans le
+          doc client. Distingué structurellement par `audience` sur
+          chaque alerte (pas de filtrage de texte de code). */}
+      {props.audit.internalAlerts.length > 0 && (
+        <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 print:hidden">
+          <div className="mb-2 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-amber-700" />
+            <p className="font-medium">
+              À compléter avant la restitution — n&apos;apparaît pas dans le
+              document imprimé
+            </p>
+          </div>
+          <ul className="ml-6 list-disc space-y-1 text-amber-900/85">
+            {props.audit.internalAlerts.map((a) => (
+              <li key={a.code}>
+                {formatInternalAlertShort(a.label)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* ──────────────────────────────────────────────────────────
           Bloc 1 — Page de garde (première page à l'impression)
@@ -315,57 +343,73 @@ export function AuditView(props: AuditViewProps) {
         </p>
 
         <div className="mt-6 grid grid-cols-2 gap-4">
-          {props.audit.performanceChain.ratios.map((r) => {
-            const statusStyle =
-              r.status === "above"
-                ? "bg-emerald-50 text-emerald-900 border-emerald-200"
-                : r.status === "below"
-                ? "bg-amber-50 text-amber-900 border-amber-200"
-                : "bg-muted text-muted-foreground border-border";
-            const statusLabel =
-              r.status === "above"
-                ? r.higherIsWorse
-                  ? "À surveiller"
-                  : "Au-dessus du repère"
-                : r.status === "below"
-                ? r.higherIsWorse
+          {/* Filtre `derived` : les ratios marqués dérivés (chute
+              compromis→acte = 100 − compromis→acte) restent dans la
+              structure mais ne sont pas rendus — ils dupliquent un
+              autre ratio déjà présent. */}
+          {props.audit.performanceChain.ratios
+            .filter((r) => !r.derived)
+            .map((r) => {
+              const display = decideRatioDisplay(r);
+              const statusStyle =
+                r.status === "above"
+                  ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                  : r.status === "below"
+                  ? "bg-amber-50 text-amber-900 border-amber-200"
+                  : "bg-muted text-muted-foreground border-border";
+              const statusLabel =
+                r.status === "above"
+                  ? r.higherIsWorse
+                    ? "À surveiller"
+                    : "Au-dessus du repère"
+                  : r.higherIsWorse
                   ? "Dans le repère"
-                  : "Sous le repère"
-                : "Non mesuré";
-            return (
-              <div
-                key={r.key}
-                className="audit-ratio rounded-md border border-border/60 p-4"
-              >
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  {r.label}
-                </p>
-                <p
-                  className="mt-2 font-heading text-2xl font-bold"
-                  style={{ color: "var(--color-brand-deep)" }}
+                  : "Sous le repère";
+              return (
+                <div
+                  key={r.key}
+                  className="audit-ratio rounded-md border border-border/60 p-4"
                 >
-                  {r.value === null
-                    ? "Non mesuré"
-                    : formatMetricValue(r.value, r.unit)}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                  {r.benchmark !== null && r.value !== null && (
-                    <span className="text-muted-foreground">
-                      Repère {formatMetricValue(r.benchmark, r.unit)}
-                    </span>
-                  )}
-                  <span
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    {r.label}
+                  </p>
+                  <p
                     className={cn(
-                      "inline-flex items-center rounded-full border px-2 py-0.5",
-                      statusStyle
+                      "mt-2 font-heading text-2xl font-bold",
+                      !display.showValue && "text-muted-foreground/70 text-base"
                     )}
+                    style={{
+                      color: display.showValue
+                        ? "var(--color-brand-deep)"
+                        : undefined,
+                    }}
                   >
-                    {statusLabel}
-                  </span>
+                    {display.showValue
+                      ? formatMetricValue(r.value, r.unit)
+                      : display.emptyValueText}
+                  </p>
+                  {(display.showStatusBadge || r.benchmark !== null) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                      {r.benchmark !== null && display.showValue && (
+                        <span className="text-muted-foreground">
+                          Repère {formatMetricValue(r.benchmark, r.unit)}
+                        </span>
+                      )}
+                      {display.showStatusBadge && (
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full border px-2 py-0.5",
+                            statusStyle
+                          )}
+                        >
+                          {statusLabel}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       </section>
 
@@ -386,43 +430,48 @@ export function AuditView(props: AuditViewProps) {
           {props.audit.completeness.byBlock.practices.totalCount}
         </p>
 
-        {/* Flags groupés par thème */}
-        {Object.entries(
-          props.audit.practices.flags.reduce<
-            Record<string, typeof props.audit.practices.flags>
-          >((acc, f) => {
-            const key = f.theme;
-            acc[key] = acc[key] ? [...acc[key], f] : [f];
-            return acc;
-          }, {})
-        ).map(([theme, flags]) => (
-          <div key={theme} className="audit-flag-group mt-6">
-            <h3
-              className="text-xs font-semibold uppercase tracking-wider"
-              style={{ color: "var(--color-brand-deep)" }}
-            >
-              {THEME_LABEL[theme] ?? theme}
-            </h3>
-            <dl className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-              {flags.map((f) => (
-                <div
-                  key={f.key}
-                  className="rounded-md border border-border/60 p-3 text-sm"
-                >
-                  <dt className="text-[11px] text-muted-foreground">
-                    {f.label}
-                  </dt>
-                  <dd
-                    className="mt-1 font-medium"
-                    style={{ color: "var(--color-brand-deep)" }}
-                  >
-                    {formatFlagValue(f.value)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ))}
+        {/* Version courte (lot audit-2) : par thème, une ligne par
+            pratique absente formulée en constat. Formulation en dur via
+            `PRACTICE_GAP_STATEMENTS` côté moteur — aucun IA, mapping
+            explicite par ID de question. Les pratiques présentes ne
+            sont pas listées (le doc client se concentre sur les
+            manques). Version dense reviendra au lot audit-3. */}
+        {props.audit.practices.gaps.length === 0 ? (
+          <p className="mt-6 text-sm text-muted-foreground">
+            Aucun manque de pratique identifié sur les questions couvertes.
+          </p>
+        ) : (
+          Object.entries(
+            props.audit.practices.gaps.reduce<
+              Record<string, typeof props.audit.practices.gaps>
+            >((acc, g) => {
+              const key = g.theme;
+              acc[key] = acc[key] ? [...acc[key], g] : [g];
+              return acc;
+            }, {})
+          ).map(([theme, gaps]) => (
+            <div key={theme} className="audit-flag-group mt-6">
+              <h3
+                className="text-xs font-semibold uppercase tracking-wider"
+                style={{ color: "var(--color-brand-deep)" }}
+              >
+                {THEME_LABEL[theme] ?? theme}
+              </h3>
+              <ul className="mt-2 space-y-1 text-sm text-foreground/80">
+                {gaps.map((g) => (
+                  <li key={g.key} className="flex gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="mt-1 h-1.5 w-1.5 flex-none rounded-full"
+                      style={{ background: "var(--color-brand-deep)" }}
+                    />
+                    <span>{g.statement}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
 
         {/* Verbatims */}
         {props.audit.practices.verbatims.length > 0 && (

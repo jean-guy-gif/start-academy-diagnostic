@@ -30,12 +30,23 @@ import type { DiagnosticChapter, DiagnosticQuestion } from "@/types";
 
 export type AlertSeverity = "info" | "warning" | "error";
 
+/**
+ * `client` = destiné au dirigeant (constat métier, à faire figurer
+ * dans le doc client / audit imprimable / synthèse dirigeant).
+ * `internal` = pilotage commercial interne (données obligatoires
+ * manquantes, préconditions non satisfaites) — JAMAIS dans le doc
+ * client. Distinguable structurellement pour éviter tout filtrage
+ * par texte de code côté consommateur.
+ */
+export type AlertAudience = "client" | "internal";
+
 export interface DiagnosticAlert {
   /** Identifiant stable de l'alerte (utilisé pour dedupe / cockpit). */
   code: string;
   chapter: DiagnosticChapter | null;
   label: string;
   severity: AlertSeverity;
+  audience: AlertAudience;
   /** Valeur observée quand mesurable (ratio, count…). */
   observed: number | null;
   /** Seuil de déclenchement quand applicable. */
@@ -287,6 +298,7 @@ export function computeRatiosAndAlerts(
       chapter: entry.chapter,
       label: `Donnée obligatoire manquante — ${entry.questionText}`,
       severity: "warning",
+      audience: "internal",
       observed: null,
       threshold: null,
       context: { questionId: entry.questionId, isSkipped: entry.isSkipped },
@@ -306,6 +318,7 @@ export function computeRatiosAndAlerts(
       chapter: 1,
       label: `Transaction ancien = ${ancienPercent} % — le diagnostic est calibré ancien, pertinence à vérifier avec le dirigeant`,
       severity: "warning",
+      audience: "client",
       observed: ancienPercent,
       threshold: benchmarks.transactionAncienMinPercent,
     });
@@ -319,6 +332,7 @@ export function computeRatiosAndAlerts(
       chapter: 3,
       label: "Personne ne prospecte — cause n°1 des mandats insuffisants",
       severity: "error",
+      audience: "client",
       observed: null,
       threshold: null,
     });
@@ -334,6 +348,7 @@ export function computeRatiosAndAlerts(
       chapter: 3,
       label: `Contacts → RDV à ${ratios.contactsToRdvPercent} % (benchmark ${benchmarks.contactsToRdvPercent} %)`,
       severity: "warning",
+      audience: "client",
       observed: ratios.contactsToRdvPercent,
       threshold: benchmarks.contactsToRdvPercent,
     });
@@ -352,6 +367,7 @@ export function computeRatiosAndAlerts(
       label:
         "Découverte vendeur non formalisée — cause n°1 des mandats simples surévalués",
       severity: "warning",
+      audience: "client",
       observed: null,
       threshold: null,
     });
@@ -367,6 +383,7 @@ export function computeRatiosAndAlerts(
       chapter: 5,
       label: `RDV → mandat à ${ratios.rdvToMandatPercent} % (benchmark ${benchmarks.rdvToMandatPercent} %)`,
       severity: "warning",
+      audience: "client",
       observed: ratios.rdvToMandatPercent,
       threshold: benchmarks.rdvToMandatPercent,
     });
@@ -382,6 +399,7 @@ export function computeRatiosAndAlerts(
       chapter: 5,
       label: `% exclusivité à ${exclu} % (benchmark ${benchmarks.exclusivityPercent} %)`,
       severity: "warning",
+      audience: "client",
       observed: exclu,
       threshold: benchmarks.exclusivityPercent,
     });
@@ -401,6 +419,7 @@ export function computeRatiosAndAlerts(
       chapter: 6,
       label: `Suivi vendeur ${followupFrequency.answer.replace("_", " ")} — vendeur peu tenu au courant`,
       severity: "warning",
+      audience: "client",
       observed: null,
       threshold: null,
     });
@@ -419,6 +438,7 @@ export function computeRatiosAndAlerts(
       label:
         "Financement acquéreur non vérifié — visites inutiles + chutes compromis",
       severity: "error",
+      audience: "client",
       observed: null,
       threshold: null,
     });
@@ -434,6 +454,7 @@ export function computeRatiosAndAlerts(
       chapter: 8,
       label: `Visites/vente = ${ratios.visitesParVente} (benchmark < ${benchmarks.visitsPerActe})`,
       severity: "warning",
+      audience: "client",
       observed: ratios.visitesParVente,
       threshold: benchmarks.visitsPerActe,
     });
@@ -449,6 +470,7 @@ export function computeRatiosAndAlerts(
       chapter: 8,
       label: `Offres → compromis à ${ratios.offresToCompromisPercent} % (benchmark ${benchmarks.offresToCompromisPercent} %)`,
       severity: "warning",
+      audience: "client",
       observed: ratios.offresToCompromisPercent,
       threshold: benchmarks.offresToCompromisPercent,
     });
@@ -462,6 +484,7 @@ export function computeRatiosAndAlerts(
       chapter: 8,
       label: `Compromis → acte à ${ratios.compromisToActePercent} % (benchmark ${benchmarks.compromisToActePercent} %)`,
       severity: "warning",
+      audience: "client",
       observed: ratios.compromisToActePercent,
       threshold: benchmarks.compromisToActePercent,
     });
@@ -477,6 +500,7 @@ export function computeRatiosAndAlerts(
       chapter: 9,
       label: `Avis / ventes = ${ratios.avisParVentePercent} % (benchmark ${benchmarks.reviewsPerVentePercent} %) — gisement e-réputation`,
       severity: "warning",
+      audience: "client",
       observed: ratios.avisParVentePercent,
       threshold: benchmarks.reviewsPerVentePercent,
     });
@@ -490,6 +514,7 @@ export function computeRatiosAndAlerts(
       chapter: 11,
       label: "Aucun indicateur de pilotage suivi — pilotage à l'aveugle",
       severity: "error",
+      audience: "client",
       observed: null,
       threshold: null,
     });

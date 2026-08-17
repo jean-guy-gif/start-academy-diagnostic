@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import type { AuditContent } from "./build-audit-content";
-import { decideAuditRender, isAuditAvailable } from "./decide-audit-render";
+import type { AuditContent, AuditRatio } from "./build-audit-content";
+import {
+  decideAuditRender,
+  decideRatioDisplay,
+  isAuditAvailable,
+} from "./decide-audit-render";
+
+function makeRatio(overrides: Partial<AuditRatio> = {}): AuditRatio {
+  return {
+    key: "ratioX",
+    label: "Ratio X",
+    value: null,
+    unit: "percent",
+    benchmark: null,
+    status: "no_data",
+    sourceQuestionIds: ["q"],
+    ...overrides,
+  };
+}
 
 function makeAudit(overrides: Partial<AuditContent> = {}): AuditContent {
   return {
@@ -14,13 +31,54 @@ function makeAudit(overrides: Partial<AuditContent> = {}): AuditContent {
       },
     },
     performanceChain: { ratios: [] },
-    practices: { flags: [], verbatims: [] },
+    practices: { flags: [], gaps: [], verbatims: [] },
     alerts: [],
+    internalAlerts: [],
     summary: { keyMetrics: [], topAlerts: [] },
     priorities: [],
     ...overrides,
   };
 }
+
+describe("decideRatioDisplay — trois états distincts", () => {
+  it("with_benchmark : value + benchmark → chiffre + badge de statut", () => {
+    const d = decideRatioDisplay(
+      makeRatio({ value: 42, benchmark: 30, status: "above" })
+    );
+    expect(d.kind).toBe("with_benchmark");
+    expect(d.showValue).toBe(true);
+    expect(d.showStatusBadge).toBe(true);
+    expect(d.emptyValueText).toBeNull();
+  });
+
+  it("value_only : value présente, benchmark absent → chiffre SEUL, aucun badge (surtout pas « Non mesuré » sous le chiffre)", () => {
+    const d = decideRatioDisplay(
+      makeRatio({ value: 4.7, benchmark: null, status: "no_benchmark" })
+    );
+    expect(d.kind).toBe("value_only");
+    expect(d.showValue).toBe(true);
+    expect(d.showStatusBadge).toBe(false);
+    expect(d.emptyValueText).toBeNull();
+  });
+
+  it("no_data : pas de valeur → « Non renseigné », aucun chiffre, aucun badge", () => {
+    const d = decideRatioDisplay(
+      makeRatio({ value: null, benchmark: null, status: "no_data" })
+    );
+    expect(d.kind).toBe("no_data");
+    expect(d.showValue).toBe(false);
+    expect(d.showStatusBadge).toBe(false);
+    expect(d.emptyValueText).toBe("Non renseigné");
+  });
+
+  it("no_data prime sur benchmark présent (ratio calculé sans dénominateur)", () => {
+    const d = decideRatioDisplay(
+      makeRatio({ value: null, benchmark: 30, status: "no_data" })
+    );
+    expect(d.kind).toBe("no_data");
+    expect(d.showStatusBadge).toBe(false);
+  });
+});
 
 describe("isAuditAvailable — gate CTA parcours diagnostic", () => {
   it("0 réponse → indisponible", () => {
@@ -46,8 +104,9 @@ describe("isAuditAvailable — gate CTA parcours diagnostic", () => {
         },
       },
       performanceChain: { ratios: [] },
-      practices: { flags: [], verbatims: [] },
+      practices: { flags: [], gaps: [], verbatims: [] },
       alerts: [],
+      internalAlerts: [],
       summary: { keyMetrics: [], topAlerts: [] },
       priorities: [],
     };
@@ -114,6 +173,7 @@ describe("decideAuditRender — état vide vs audit", () => {
         },
         practices: {
           flags: [],
+          gaps: [],
           verbatims: [
             {
               key: "top3_priorities",
@@ -155,6 +215,7 @@ describe("decideAuditRender — état vide vs audit", () => {
         },
         practices: {
           flags: [],
+          gaps: [],
           verbatims: [
             {
               key: "top3_priorities",

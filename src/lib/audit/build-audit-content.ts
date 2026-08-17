@@ -57,7 +57,16 @@ export type RatioUnit =
   | "rating_5"
   | "ratio";
 
-export type RatioStatus = "above" | "below" | "unknown";
+/**
+ * Trois états distincts (au lieu du `"unknown"` fourre-tout précédent) :
+ *   • `above` / `below` — valeur ET repère présents, comparaison faite ;
+ *   • `no_benchmark` — valeur présente MAIS aucun repère de référence
+ *     (afficher la valeur seule, aucune mention de statut — surtout pas
+ *     « Non mesuré » sous un chiffre qui existe) ;
+ *   • `no_data` — pas de réponse (afficher « Non renseigné », pas de
+ *     valeur, pas de badge de statut).
+ */
+export type RatioStatus = "above" | "below" | "no_benchmark" | "no_data";
 
 export interface AuditRatio {
   key: string;
@@ -73,6 +82,13 @@ export interface AuditRatio {
    * print) doit inverser sa lecture. Défaut : `false`.
    */
   higherIsWorse?: boolean;
+  /**
+   * `true` = ratio conservé dans la structure pour compat, mais NE DOIT
+   * PAS être rendu — c'est un dérivé d'un autre ratio déjà présent
+   * (ex. `chuteCompromisActePercent` = 100 − `compromisToActePercent` :
+   * même fait métier, ne pas dupliquer à l'écran ni au print).
+   */
+  derived?: boolean;
 }
 
 export interface PracticeFlag {
@@ -89,6 +105,22 @@ export interface Verbatim {
   label: string;
   content: string;
   sourceQuestionIds: string[];
+}
+
+/**
+ * Constat de manque tiré des flags "pratique absente" — version courte
+ * du bloc Pratiques imprimé. Formulation en dur par ID de question
+ * (mapping `PRACTICE_GAP_STATEMENTS`), aucune IA. En attendant le lot
+ * audit-3 qui portera une rédaction plus complète, ce format permet de
+ * livrer un doc client sobre : par thème, une ligne par pratique
+ * absente, phrase de constat.
+ */
+export interface PracticeGap {
+  key: string;
+  theme: PracticeTheme;
+  /** Phrase de constat prête à imprimer, ex. « Pas de trame de découverte vendeur ». */
+  statement: string;
+  sourceQuestionId: string;
 }
 
 export interface NumberedPriority {
@@ -112,13 +144,25 @@ export interface AuditContent {
   };
   practices: {
     flags: PracticeFlag[];
+    /** Constats de manque prêts à imprimer (version courte). */
+    gaps: PracticeGap[];
     verbatims: Verbatim[];
   };
+  /** Pass-through de TOUTES les alertes reçues en entrée. */
   alerts: DiagnosticAlert[];
+  /**
+   * Sous-ensemble des alertes destinées au **commercial** uniquement
+   * (`audience === "internal"`) — données obligatoires manquantes,
+   * préconditions non satisfaites. JAMAIS rendues dans le doc client
+   * ni utilisées pour prioriser la synthèse dirigeant.
+   */
+  internalAlerts: DiagnosticAlert[];
   summary: {
     keyMetrics: AuditRatio[];
+    /** N alertes client les plus sévères — `audience === "client"` uniquement. */
     topAlerts: DiagnosticAlert[];
   };
+  /** Dérivées des alertes client uniquement — jamais des alertes internes. */
   priorities: NumberedPriority[];
 }
 
@@ -154,6 +198,81 @@ export const SUMMARY_KEY_METRICS: readonly string[] = [
   "exclusivityPercent",
   "mandatesAverageDurationMonths",
 ];
+
+/**
+ * Formulation en dur des constats de manque pour les questions de type
+ * `yesno`. Émis quand la réponse vaut `false`. Une pratique non listée
+ * ici → aucun constat émis (élargissement contrôlé, pas d'IA). À faire
+ * évoluer au lot audit-3.
+ */
+export const PRACTICE_GAP_STATEMENTS: Readonly<Record<string, string>> = {
+  "prospecting-script": "Pas de script de prospection formalisé",
+  "seller-discovery-formalized": "Pas de trame de découverte vendeur",
+  "seller-written-valuation": "Pas d'avis de valeur écrit remis en RDV",
+  "buyers-discovery-formalized": "Pas de trame de découverte acquéreur",
+  "buyers-financing-verified": "Financement acquéreur non vérifié avant visites",
+  "tools-esignature": "Signature électronique non déployée",
+  "tool-team-access": "Outils IA pas partagés à l'équipe",
+  "tool-chatgpt-setup": "Outils IA utilisés sans paramétrage agence",
+  "tool-chatgpt-instructions":
+    "L'IA ne connaît ni l'agence, ni le secteur, ni les usages maison",
+  "tool-prompts-standard":
+    "Chaque conseiller utilise l'IA à sa façon — qualité inégale selon qui s'en sert",
+  "tool-anti-hallucination":
+    "Aucune vérification des contenus produits par l'IA avant usage client",
+  "tool-notebook-created":
+    "Les documents internes (règlements, PV d'AG) ne sont pas exploités par l'IA",
+  "mgmt-coaching-individual": "Pas d'entretien individuel régulier",
+  "exec-manager-reporting":
+    "Pas de remontée d'activité organisée entre deux réunions",
+};
+
+/**
+ * Sentinelle pour la clé "sélection vide" dans `PRACTICE_CHOICE_GAP_RULES`.
+ * S'applique aux `multichoice` uniquement — si l'utilisateur a répondu
+ * MAIS n'a coché aucune option, ce constat est émis. Sans effet sur
+ * les `choice`.
+ */
+export const CHOICE_GAP_EMPTY_KEY = "__empty__";
+
+/**
+ * Constats de manque pour les questions de type `choice` OU `multichoice`.
+ * Un constat spécifique par valeur retenue ; une valeur non listée → aucun
+ * constat émis. Comme `PRACTICE_GAP_STATEMENTS`, mapping en dur, pas d'IA.
+ *
+ * Comparaison insensible à la casse — la valeur est normalisée
+ * (`trim().toLowerCase()`) avant lookup. Toutes les clés sont donc en
+ * minuscules.
+ *
+ * Cas particulier `multichoice` : la clé `CHOICE_GAP_EMPTY_KEY` matche
+ * une sélection vide (utilisateur a répondu mais aucune option cochée).
+ * Le même constat peut être associé à `aucun` ET à `__empty__` pour
+ * couvrir les deux cas — c'est explicitement la sémantique demandée
+ * pour `tools-ai-usage`.
+ */
+export const PRACTICE_CHOICE_GAP_RULES: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  "mandates-price-above-market": {
+    souvent:
+      "Prise de mandats au-dessus du prix de marché sans stratégie de repli",
+  },
+  "db-crm-uptodate": {
+    // `non` = la fiche au hasard « raconte n'importe quoi » côté question.
+    // Voir docs de `db-crm-uptodate` : choices = ["oui", "non", "partiellement"].
+    // Pas de valeur `obsolete` dans le questionnaire.
+    non: "Base de contacts obsolète",
+    partiellement: "Base de contacts partiellement à jour",
+  },
+  "tools-ai-usage": {
+    // multichoice — constat unique déclenché soit par la présence de
+    // `aucun` dans la sélection, soit par une sélection vide (aucune
+    // option cochée). Deux entrées volontairement redondantes pour
+    // exprimer la sémantique produit demandée.
+    aucun: "Aucun outil IA utilisé au quotidien",
+    [CHOICE_GAP_EMPTY_KEY]: "Aucun outil IA utilisé au quotidien",
+  },
+};
 
 // Note Google — pas de benchmark ici. `DEFAULT_BENCHMARKS` ne fournit
 // pas de seuil pour une note sur 5, et introduire une valeur en dur
@@ -563,7 +682,8 @@ function computeStatus(
   value: number | null,
   benchmark: number | null
 ): RatioStatus {
-  if (value === null || benchmark === null) return "unknown";
+  if (value === null) return "no_data";
+  if (benchmark === null) return "no_benchmark";
   return value >= benchmark ? "above" : "below";
 }
 
@@ -675,7 +795,7 @@ function buildPerformanceRatios(
       value: perfRateEstimation,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(perfRateEstimation, null),
       sourceQuestionIds: ["perf-rate-estimation"],
     },
     {
@@ -693,7 +813,7 @@ function buildPerformanceRatios(
       value: perfRateExclusivity,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(perfRateExclusivity, null),
       sourceQuestionIds: ["perf-rate-exclusivity"],
     },
     {
@@ -711,7 +831,7 @@ function buildPerformanceRatios(
       value: mandatesAvgMonths,
       unit: "months",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(mandatesAvgMonths, null),
       sourceQuestionIds: ["mandates-average-duration-months"],
       higherIsWorse: true,
     },
@@ -721,7 +841,7 @@ function buildPerformanceRatios(
       value: visitesToOffres,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(visitesToOffres, null),
       sourceQuestionIds: ["visits-per-month", "offers-per-month"],
     },
     {
@@ -754,9 +874,13 @@ function buildPerformanceRatios(
       value: chuteCompromisActe,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(chuteCompromisActe, null),
       sourceQuestionIds: ["chute-compromis-acte-percent"],
       higherIsWorse: true,
+      // Dérivé de `compromisToActePercent` (100 - x). Conservé dans la
+      // structure pour compat (consommateurs externes possibles), mais
+      // filtré du rendu print — ne pas afficher deux fois le même fait.
+      derived: true,
     },
     {
       key: "priceDropPerMonthPercent",
@@ -764,7 +888,7 @@ function buildPerformanceRatios(
       value: priceDrop,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(priceDrop, null),
       sourceQuestionIds: ["commercial-price-drop-per-month-percent"],
     },
     {
@@ -773,7 +897,7 @@ function buildPerformanceRatios(
       value: dbVolume,
       unit: "count",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(dbVolume, null),
       sourceQuestionIds: ["db-volume"],
     },
     {
@@ -782,7 +906,7 @@ function buildPerformanceRatios(
       value: crmUsage,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(crmUsage, null),
       sourceQuestionIds: ["perf-crm-usage"],
     },
     {
@@ -791,7 +915,7 @@ function buildPerformanceRatios(
       value: reviewsCount,
       unit: "count",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(reviewsCount, null),
       sourceQuestionIds: ["google-reviews-count"],
     },
     {
@@ -805,7 +929,7 @@ function buildPerformanceRatios(
       value: reviewsScore,
       unit: "rating_5",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(reviewsScore, null),
       sourceQuestionIds: ["google-reviews-score"],
     },
   ];
@@ -837,6 +961,71 @@ function buildPracticeFlags(answers: AnswerRecord[]): PracticeFlag[] {
     });
   }
   return flags;
+}
+
+function buildPracticeGaps(flags: PracticeFlag[]): PracticeGap[] {
+  const gaps: PracticeGap[] = [];
+  for (const flag of flags) {
+    const mapping = QUESTION_MAPPING[flag.sourceQuestionId];
+    if (!mapping?.theme) continue;
+
+    // yesno : constat émis quand la pratique est absente (value === false).
+    if (flag.value === false) {
+      const statement = PRACTICE_GAP_STATEMENTS[flag.sourceQuestionId];
+      if (!statement) continue;
+      gaps.push({
+        key: flag.sourceQuestionId,
+        theme: mapping.theme,
+        statement,
+        sourceQuestionId: flag.sourceQuestionId,
+      });
+      continue;
+    }
+
+    // choice : constat spécifique par valeur retenue (ex. « souvent »
+    // pour mandats-price-above-market → constat de dérive tarifaire).
+    // Comparaison lowercased pour aligner avec le stockage saisi.
+    if (typeof flag.value === "string") {
+      const rules = PRACTICE_CHOICE_GAP_RULES[flag.sourceQuestionId];
+      if (!rules) continue;
+      const key = flag.value.trim().toLowerCase();
+      const statement = rules[key];
+      if (!statement) continue;
+      gaps.push({
+        key: `${flag.sourceQuestionId}:${key}`,
+        theme: mapping.theme,
+        statement,
+        sourceQuestionId: flag.sourceQuestionId,
+      });
+      continue;
+    }
+
+    // multichoice : constat émis si une des valeurs sélectionnées matche
+    // une règle, OU si la sélection est vide (clé sentinelle __empty__).
+    // Un seul gap par question — la première règle qui matche gagne
+    // (ordre naturel : __empty__ pris en compte quand la sélection l'est).
+    if (Array.isArray(flag.value)) {
+      const rules = PRACTICE_CHOICE_GAP_RULES[flag.sourceQuestionId];
+      if (!rules) continue;
+      const normalized = flag.value
+        .map((v) => v.trim().toLowerCase())
+        .filter((v) => v.length > 0);
+      const lookupKeys =
+        normalized.length === 0 ? [CHOICE_GAP_EMPTY_KEY] : normalized;
+      for (const key of lookupKeys) {
+        const statement = rules[key];
+        if (!statement) continue;
+        gaps.push({
+          key: `${flag.sourceQuestionId}:${key}`,
+          theme: mapping.theme,
+          statement,
+          sourceQuestionId: flag.sourceQuestionId,
+        });
+        break;
+      }
+    }
+  }
+  return gaps;
 }
 
 function buildVerbatims(answers: AnswerRecord[]): Verbatim[] {
@@ -939,17 +1128,27 @@ export function buildAuditContent(
   const alerts = input.alerts ?? [];
   const topAlertsLimit = input.topAlertsLimit ?? 3;
   const benchmarks = { ...DEFAULT_BENCHMARKS, ...(input.benchmarks ?? {}) };
+  // Séparation structurelle (jamais par matching de texte de code) :
+  // seul le champ `audience` gouverne l'appartenance au doc client
+  // vs à l'encart interne commercial.
+  const clientAlerts = alerts.filter((a) => a.audience === "client");
+  const internalAlerts = alerts.filter((a) => a.audience === "internal");
   const ratios = buildPerformanceRatios(input.answers, benchmarks);
   const flags = buildPracticeFlags(input.answers);
+  const gaps = buildPracticeGaps(flags);
   const verbatims = buildVerbatims(input.answers);
   const completeness = buildCompleteness(input.answers);
-  const summary = buildSummary(ratios, alerts, topAlertsLimit);
-  const priorities = buildPriorities(alerts, topAlertsLimit);
+  // Synthèse dirigeant et priorités : uniquement alertes client. Un
+  // « donnée obligatoire manquante » ne peut pas figurer dans un doc
+  // remis au dirigeant — c'est un signal de pilotage commercial.
+  const summary = buildSummary(ratios, clientAlerts, topAlertsLimit);
+  const priorities = buildPriorities(clientAlerts, topAlertsLimit);
   return {
     completeness,
     performanceChain: { ratios },
-    practices: { flags, verbatims },
+    practices: { flags, gaps, verbatims },
     alerts,
+    internalAlerts,
     summary,
     priorities,
   };

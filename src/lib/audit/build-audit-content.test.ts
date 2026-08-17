@@ -585,6 +585,87 @@ describe("Practice gaps — constats de manque par thème", () => {
     const audit = buildAuditContent({ answers: [] });
     expect(audit.practices.gaps).toEqual([]);
   });
+
+  it("mgmt-recruitment n'émet PAS de gap (retiré du mapping — un recrutement en cours n'est pas un manquement)", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("mgmt-recruitment", "non")],
+    });
+    expect(
+      audit.practices.gaps.find((g) => g.sourceQuestionId === "mgmt-recruitment")
+    ).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Règles CHOICE — valeur retenue → constat spécifique
+  // -------------------------------------------------------------------------
+
+  it("mandates-price-above-market = souvent → constat de dérive tarifaire", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("mandates-price-above-market", "souvent")],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "mandates-price-above-market"
+    );
+    expect(gap?.statement).toBe(
+      "Prise de mandats au-dessus du prix de marché sans stratégie de repli"
+    );
+    expect(gap?.theme).toBe("mandates_setup");
+  });
+
+  it("mandates-price-above-market = parfois OU jamais → AUCUN gap", () => {
+    for (const v of ["parfois", "jamais"]) {
+      const audit = buildAuditContent({
+        answers: [makeAnswer("mandates-price-above-market", v)],
+      });
+      expect(
+        audit.practices.gaps.find(
+          (g) => g.sourceQuestionId === "mandates-price-above-market"
+        )
+      ).toBeUndefined();
+    }
+  });
+
+  it("db-crm-uptodate = non → « Base de contacts obsolète »", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("db-crm-uptodate", "non")],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "db-crm-uptodate"
+    );
+    expect(gap?.statement).toBe("Base de contacts obsolète");
+  });
+
+  it("db-crm-uptodate = partiellement → « Base de contacts partiellement à jour »", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("db-crm-uptodate", "partiellement")],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "db-crm-uptodate"
+    );
+    expect(gap?.statement).toBe("Base de contacts partiellement à jour");
+  });
+
+  it("db-crm-uptodate = oui → AUCUN gap", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("db-crm-uptodate", "oui")],
+    });
+    expect(
+      audit.practices.gaps.find((g) => g.sourceQuestionId === "db-crm-uptodate")
+    ).toBeUndefined();
+  });
+
+  it("choice avec casse mixte / espaces → toujours matché (comparaison normalisée)", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("mandates-price-above-market", "  Souvent  ")],
+    });
+    expect(
+      audit.practices.gaps.find(
+        (g) => g.sourceQuestionId === "mandates-price-above-market"
+      )?.statement
+    ).toBe(
+      "Prise de mandats au-dessus du prix de marché sans stratégie de repli"
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

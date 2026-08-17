@@ -200,30 +200,56 @@ export const SUMMARY_KEY_METRICS: readonly string[] = [
 ];
 
 /**
- * Formulation en dur des constats de manque par ID de question — lot
- * audit-2 (version courte). Chaque entrée s'applique quand la réponse
- * yesno vaut `false`. Une pratique non listée ici → aucun constat émis
- * (élargissement contrôlé, pas d'IA). À faire évoluer au lot audit-3.
+ * Formulation en dur des constats de manque pour les questions de type
+ * `yesno`. Émis quand la réponse vaut `false`. Une pratique non listée
+ * ici → aucun constat émis (élargissement contrôlé, pas d'IA). À faire
+ * évoluer au lot audit-3.
  */
 export const PRACTICE_GAP_STATEMENTS: Readonly<Record<string, string>> = {
   "prospecting-script": "Pas de script de prospection formalisé",
   "seller-discovery-formalized": "Pas de trame de découverte vendeur",
   "seller-written-valuation": "Pas d'avis de valeur écrit remis en RDV",
-  "mandates-price-above-market": "Mandats pris régulièrement au-dessus du marché",
   "buyers-discovery-formalized": "Pas de trame de découverte acquéreur",
   "buyers-financing-verified": "Financement acquéreur non vérifié avant visites",
-  "db-crm-uptodate": "CRM pas tenu à jour au fil de l'eau",
   "tools-esignature": "Signature électronique non déployée",
   "tools-ai-usage": "Aucun outil IA utilisé au quotidien",
   "tool-team-access": "Outils IA pas partagés à l'équipe",
-  "tool-chatgpt-setup": "ChatGPT sans compte / setup dédié agence",
-  "tool-chatgpt-instructions": "ChatGPT sans instructions personnalisées",
-  "tool-prompts-standard": "Pas de prompts standards partagés",
-  "tool-anti-hallucination": "Aucun garde-fou anti-hallucination sur les prompts",
-  "tool-notebook-created": "NotebookLM non utilisé",
+  "tool-chatgpt-setup": "Outils IA utilisés sans paramétrage agence",
+  "tool-chatgpt-instructions":
+    "L'IA ne connaît ni l'agence, ni le secteur, ni les usages maison",
+  "tool-prompts-standard":
+    "Chaque conseiller utilise l'IA à sa façon — qualité inégale selon qui s'en sert",
+  "tool-anti-hallucination":
+    "Aucune vérification des contenus produits par l'IA avant usage client",
+  "tool-notebook-created":
+    "Les documents internes (règlements, PV d'AG) ne sont pas exploités par l'IA",
   "mgmt-coaching-individual": "Pas d'entretien individuel régulier",
-  "exec-manager-reporting": "Pas de reporting régulier au dirigeant",
-  "mgmt-recruitment": "Pas de politique de recrutement structurée",
+  "exec-manager-reporting":
+    "Pas de remontée d'activité organisée entre deux réunions",
+};
+
+/**
+ * Constats de manque pour les questions de type `choice` — un constat
+ * spécifique par valeur retenue. Une valeur non listée → aucun constat
+ * émis. Comme `PRACTICE_GAP_STATEMENTS`, mapping en dur, pas d'IA.
+ *
+ * Comparaison insensible à la casse — la valeur du choice est
+ * normalisée avant lookup. Toutes les clés sont donc en minuscules.
+ */
+export const PRACTICE_CHOICE_GAP_RULES: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  "mandates-price-above-market": {
+    souvent:
+      "Prise de mandats au-dessus du prix de marché sans stratégie de repli",
+  },
+  "db-crm-uptodate": {
+    // `non` = la fiche au hasard « raconte n'importe quoi » côté question.
+    // Voir docs de `db-crm-uptodate` : choices = ["oui", "non", "partiellement"].
+    // Pas de valeur `obsolete` dans le questionnaire.
+    non: "Base de contacts obsolète",
+    partiellement: "Base de contacts partiellement à jour",
+  },
 };
 
 // Note Google — pas de benchmark ici. `DEFAULT_BENCHMARKS` ne fournit
@@ -918,17 +944,37 @@ function buildPracticeFlags(answers: AnswerRecord[]): PracticeFlag[] {
 function buildPracticeGaps(flags: PracticeFlag[]): PracticeGap[] {
   const gaps: PracticeGap[] = [];
   for (const flag of flags) {
-    if (flag.value !== false) continue;
-    const statement = PRACTICE_GAP_STATEMENTS[flag.sourceQuestionId];
-    if (!statement) continue;
     const mapping = QUESTION_MAPPING[flag.sourceQuestionId];
     if (!mapping?.theme) continue;
-    gaps.push({
-      key: flag.sourceQuestionId,
-      theme: mapping.theme,
-      statement,
-      sourceQuestionId: flag.sourceQuestionId,
-    });
+
+    // yesno : constat émis quand la pratique est absente (value === false).
+    if (flag.value === false) {
+      const statement = PRACTICE_GAP_STATEMENTS[flag.sourceQuestionId];
+      if (!statement) continue;
+      gaps.push({
+        key: flag.sourceQuestionId,
+        theme: mapping.theme,
+        statement,
+        sourceQuestionId: flag.sourceQuestionId,
+      });
+      continue;
+    }
+
+    // choice : constat spécifique par valeur retenue (ex. « souvent »
+    // pour mandats-price-above-market → constat de dérive tarifaire).
+    // Comparaison lowercased pour aligner avec le stockage saisi.
+    if (typeof flag.value === "string") {
+      const rules = PRACTICE_CHOICE_GAP_RULES[flag.sourceQuestionId];
+      if (!rules) continue;
+      const statement = rules[flag.value.trim().toLowerCase()];
+      if (!statement) continue;
+      gaps.push({
+        key: `${flag.sourceQuestionId}:${flag.value.trim().toLowerCase()}`,
+        theme: mapping.theme,
+        statement,
+        sourceQuestionId: flag.sourceQuestionId,
+      });
+    }
   }
   return gaps;
 }

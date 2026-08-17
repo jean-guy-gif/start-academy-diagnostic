@@ -15,8 +15,11 @@
  * Cas particuliers documentés dans `docs/diagnostic-cleanup-backlog.md` :
  *   • `google-reviews-score` typé `percent` en source mais traité
  *     ici comme note sur 5 (unit `rating_5`, benchmark 4.5).
- *   • Doublon `prospecting-pige-tool` / `tools-pige` — un seul
- *     verbatim `pige_tool` retenu, valeur la plus longue gagne.
+ *
+ * Note post lot answer-labels : les 2 anciens doublons Ch.3
+ * `prospecting-pige-tool` et Ch.4 `estimation-tool` ont été supprimés
+ * du questionnaire (consolidation en Ch.10 `tools-pige` / `tools-estimation`).
+ * Il n'y a donc plus de logique de dédup verbatim par valeur la plus longue.
  */
 
 import type { AnswerRecord } from "@/lib/diagnostics/diagnostic-service";
@@ -98,6 +101,14 @@ export interface PracticeFlag {
   /** Booléen pour yesno ; string / string[] pour choice / multichoice ; null si non renseigné. */
   value: boolean | string | string[] | null;
   sourceQuestionId: string;
+  /**
+   * Libellés humains par valeur technique pour choice / multichoice —
+   * propagés depuis `DiagnosticQuestion.optionLabels` afin que les
+   * consommateurs (rendu audit, prompt IA) puissent humaniser sans
+   * ré-importer le questionnaire. `undefined` si la question ne
+   * fournit pas de mapping.
+   */
+  optionLabels?: Record<string, string>;
 }
 
 export interface Verbatim {
@@ -335,12 +346,6 @@ export const QUESTION_MAPPING: Readonly<Record<string, MappingEntry>> = {
     role: "practice_flag",
     theme: "prospecting_setup",
   },
-  "prospecting-pige-tool": {
-    block: "practices",
-    role: "verbatim",
-    verbatimKey: "pige_tool",
-    verbatimLabel: "Outil de pige utilisé",
-  },
   // Ch.4 — RDV vendeur
   "seller-meetings-per-month": {
     block: "performance_chain",
@@ -369,12 +374,6 @@ export const QUESTION_MAPPING: Readonly<Record<string, MappingEntry>> = {
     block: "practices",
     role: "practice_flag",
     theme: "seller_rituals",
-  },
-  "estimation-tool": {
-    block: "practices",
-    role: "verbatim",
-    verbatimKey: "estimation_tool",
-    verbatimLabel: "Outil d'estimation utilisé",
   },
   "skill-qualification": {
     block: "practices",
@@ -958,6 +957,7 @@ function buildPracticeFlags(answers: AnswerRecord[]): PracticeFlag[] {
       theme: mapping.theme!,
       value,
       sourceQuestionId: questionId,
+      optionLabels: q?.optionLabels,
     });
   }
   return flags;

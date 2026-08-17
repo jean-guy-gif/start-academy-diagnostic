@@ -6,6 +6,9 @@ import { DEFAULT_BENCHMARKS } from "@/lib/diagnostics/ratios-service";
 import { diagnosticQuestions } from "@/lib/data/diagnostic-questions";
 
 import {
+  CHOICE_GAP_EMPTY_KEY,
+  PRACTICE_CHOICE_GAP_RULES,
+  PRACTICE_GAP_STATEMENTS,
   QUESTION_MAPPING,
   SUMMARY_KEY_METRICS,
   buildAuditContent,
@@ -665,6 +668,147 @@ describe("Practice gaps — constats de manque par thème", () => {
     ).toBe(
       "Prise de mandats au-dessus du prix de marché sans stratégie de repli"
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Règle MULTICHOICE — tools-ai-usage
+  // -------------------------------------------------------------------------
+
+  it("tools-ai-usage = [aucun] → « Aucun outil IA utilisé au quotidien »", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("tools-ai-usage", '["aucun"]')],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "tools-ai-usage"
+    );
+    expect(gap?.statement).toBe("Aucun outil IA utilisé au quotidien");
+    expect(gap?.theme).toBe("tools_ai");
+  });
+
+  it("tools-ai-usage = [] (sélection vide) → même constat que aucun", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("tools-ai-usage", "[]")],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "tools-ai-usage"
+    );
+    expect(gap?.statement).toBe("Aucun outil IA utilisé au quotidien");
+  });
+
+  it("tools-ai-usage = [redaction_annonces] → AUCUN gap", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("tools-ai-usage", '["redaction_annonces"]')],
+    });
+    expect(
+      audit.practices.gaps.find((g) => g.sourceQuestionId === "tools-ai-usage")
+    ).toBeUndefined();
+  });
+
+  it("tools-ai-usage = [redaction_annonces, estimation] → AUCUN gap", () => {
+    const audit = buildAuditContent({
+      answers: [
+        makeAnswer("tools-ai-usage", '["redaction_annonces","estimation"]'),
+      ],
+    });
+    expect(
+      audit.practices.gaps.find((g) => g.sourceQuestionId === "tools-ai-usage")
+    ).toBeUndefined();
+  });
+
+  it("tools-ai-usage = [aucun, redaction_annonces] (données incohérentes) → gap émis quand même (aucun présent)", () => {
+    const audit = buildAuditContent({
+      answers: [
+        makeAnswer("tools-ai-usage", '["aucun","redaction_annonces"]'),
+      ],
+    });
+    expect(
+      audit.practices.gaps.find((g) => g.sourceQuestionId === "tools-ai-usage")
+        ?.statement
+    ).toBe("Aucun outil IA utilisé au quotidien");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (4-quinquies) Contract tests structurels — mapping ↔ type déclaré
+// ---------------------------------------------------------------------------
+//
+// Ces tests garantissent qu'on ne peut plus jamais mapper une question
+// vers un mauvais système de gap sans que la CI ne pête. Toute drift
+// silencieuse (question retypée dans le questionnaire, mapping oublié)
+// est bloquée à la construction du build.
+
+describe("Contract — mapping des gaps aligné avec les types du questionnaire", () => {
+  it("chaque ID de PRACTICE_GAP_STATEMENTS est de type yesno", () => {
+    const violations: string[] = [];
+    for (const id of Object.keys(PRACTICE_GAP_STATEMENTS)) {
+      const q = diagnosticQuestions.find((x) => x.id === id);
+      if (!q) {
+        violations.push(`${id} : question introuvable dans diagnosticQuestions`);
+        continue;
+      }
+      if (q.type !== "yesno") {
+        violations.push(`${id} : type "${q.type}" (attendu "yesno")`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("chaque ID de PRACTICE_CHOICE_GAP_RULES est de type choice ou multichoice", () => {
+    const violations: string[] = [];
+    for (const id of Object.keys(PRACTICE_CHOICE_GAP_RULES)) {
+      const q = diagnosticQuestions.find((x) => x.id === id);
+      if (!q) {
+        violations.push(`${id} : question introuvable dans diagnosticQuestions`);
+        continue;
+      }
+      if (q.type !== "choice" && q.type !== "multichoice") {
+        violations.push(
+          `${id} : type "${q.type}" (attendu "choice" ou "multichoice")`
+        );
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("chaque clé non-sentinelle d'une règle choice/multichoice existe dans les choices déclarés", () => {
+    const violations: string[] = [];
+    for (const [id, rules] of Object.entries(PRACTICE_CHOICE_GAP_RULES)) {
+      const q = diagnosticQuestions.find((x) => x.id === id);
+      if (!q || (q.type !== "choice" && q.type !== "multichoice")) continue;
+      const declaredChoices = new Set(
+        (q.choices ?? []).map((c) => c.trim().toLowerCase())
+      );
+      for (const key of Object.keys(rules)) {
+        if (key === CHOICE_GAP_EMPTY_KEY) continue;
+        if (!declaredChoices.has(key)) {
+          violations.push(
+            `${id} : clé "${key}" absente des choices [${(q.choices ?? []).join(", ")}]`
+          );
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("aucun ID ne peut être mappé simultanément dans yesno et choice (systèmes exclusifs)", () => {
+    const dupes = Object.keys(PRACTICE_GAP_STATEMENTS).filter(
+      (id) => id in PRACTICE_CHOICE_GAP_RULES
+    );
+    expect(dupes).toEqual([]);
+  });
+
+  it("__empty__ n'est utilisé que pour des questions multichoice (sémantique définie uniquement là)", () => {
+    const violations: string[] = [];
+    for (const [id, rules] of Object.entries(PRACTICE_CHOICE_GAP_RULES)) {
+      if (!(CHOICE_GAP_EMPTY_KEY in rules)) continue;
+      const q = diagnosticQuestions.find((x) => x.id === id);
+      if (q?.type !== "multichoice") {
+        violations.push(
+          `${id} : __empty__ défini mais type "${q?.type}" (attendu "multichoice")`
+        );
+      }
+    }
+    expect(violations).toEqual([]);
   });
 });
 

@@ -212,7 +212,6 @@ export const PRACTICE_GAP_STATEMENTS: Readonly<Record<string, string>> = {
   "buyers-discovery-formalized": "Pas de trame de découverte acquéreur",
   "buyers-financing-verified": "Financement acquéreur non vérifié avant visites",
   "tools-esignature": "Signature électronique non déployée",
-  "tools-ai-usage": "Aucun outil IA utilisé au quotidien",
   "tool-team-access": "Outils IA pas partagés à l'équipe",
   "tool-chatgpt-setup": "Outils IA utilisés sans paramétrage agence",
   "tool-chatgpt-instructions":
@@ -229,12 +228,27 @@ export const PRACTICE_GAP_STATEMENTS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Constats de manque pour les questions de type `choice` — un constat
- * spécifique par valeur retenue. Une valeur non listée → aucun constat
- * émis. Comme `PRACTICE_GAP_STATEMENTS`, mapping en dur, pas d'IA.
+ * Sentinelle pour la clé "sélection vide" dans `PRACTICE_CHOICE_GAP_RULES`.
+ * S'applique aux `multichoice` uniquement — si l'utilisateur a répondu
+ * MAIS n'a coché aucune option, ce constat est émis. Sans effet sur
+ * les `choice`.
+ */
+export const CHOICE_GAP_EMPTY_KEY = "__empty__";
+
+/**
+ * Constats de manque pour les questions de type `choice` OU `multichoice`.
+ * Un constat spécifique par valeur retenue ; une valeur non listée → aucun
+ * constat émis. Comme `PRACTICE_GAP_STATEMENTS`, mapping en dur, pas d'IA.
  *
- * Comparaison insensible à la casse — la valeur du choice est
- * normalisée avant lookup. Toutes les clés sont donc en minuscules.
+ * Comparaison insensible à la casse — la valeur est normalisée
+ * (`trim().toLowerCase()`) avant lookup. Toutes les clés sont donc en
+ * minuscules.
+ *
+ * Cas particulier `multichoice` : la clé `CHOICE_GAP_EMPTY_KEY` matche
+ * une sélection vide (utilisateur a répondu mais aucune option cochée).
+ * Le même constat peut être associé à `aucun` ET à `__empty__` pour
+ * couvrir les deux cas — c'est explicitement la sémantique demandée
+ * pour `tools-ai-usage`.
  */
 export const PRACTICE_CHOICE_GAP_RULES: Readonly<
   Record<string, Readonly<Record<string, string>>>
@@ -249,6 +263,14 @@ export const PRACTICE_CHOICE_GAP_RULES: Readonly<
     // Pas de valeur `obsolete` dans le questionnaire.
     non: "Base de contacts obsolète",
     partiellement: "Base de contacts partiellement à jour",
+  },
+  "tools-ai-usage": {
+    // multichoice — constat unique déclenché soit par la présence de
+    // `aucun` dans la sélection, soit par une sélection vide (aucune
+    // option cochée). Deux entrées volontairement redondantes pour
+    // exprimer la sémantique produit demandée.
+    aucun: "Aucun outil IA utilisé au quotidien",
+    [CHOICE_GAP_EMPTY_KEY]: "Aucun outil IA utilisé au quotidien",
   },
 };
 
@@ -966,14 +988,41 @@ function buildPracticeGaps(flags: PracticeFlag[]): PracticeGap[] {
     if (typeof flag.value === "string") {
       const rules = PRACTICE_CHOICE_GAP_RULES[flag.sourceQuestionId];
       if (!rules) continue;
-      const statement = rules[flag.value.trim().toLowerCase()];
+      const key = flag.value.trim().toLowerCase();
+      const statement = rules[key];
       if (!statement) continue;
       gaps.push({
-        key: `${flag.sourceQuestionId}:${flag.value.trim().toLowerCase()}`,
+        key: `${flag.sourceQuestionId}:${key}`,
         theme: mapping.theme,
         statement,
         sourceQuestionId: flag.sourceQuestionId,
       });
+      continue;
+    }
+
+    // multichoice : constat émis si une des valeurs sélectionnées matche
+    // une règle, OU si la sélection est vide (clé sentinelle __empty__).
+    // Un seul gap par question — la première règle qui matche gagne
+    // (ordre naturel : __empty__ pris en compte quand la sélection l'est).
+    if (Array.isArray(flag.value)) {
+      const rules = PRACTICE_CHOICE_GAP_RULES[flag.sourceQuestionId];
+      if (!rules) continue;
+      const normalized = flag.value
+        .map((v) => v.trim().toLowerCase())
+        .filter((v) => v.length > 0);
+      const lookupKeys =
+        normalized.length === 0 ? [CHOICE_GAP_EMPTY_KEY] : normalized;
+      for (const key of lookupKeys) {
+        const statement = rules[key];
+        if (!statement) continue;
+        gaps.push({
+          key: `${flag.sourceQuestionId}:${key}`,
+          theme: mapping.theme,
+          statement,
+          sourceQuestionId: flag.sourceQuestionId,
+        });
+        break;
+      }
     }
   }
   return gaps;

@@ -57,7 +57,16 @@ export type RatioUnit =
   | "rating_5"
   | "ratio";
 
-export type RatioStatus = "above" | "below" | "unknown";
+/**
+ * Trois états distincts (au lieu du `"unknown"` fourre-tout précédent) :
+ *   • `above` / `below` — valeur ET repère présents, comparaison faite ;
+ *   • `no_benchmark` — valeur présente MAIS aucun repère de référence
+ *     (afficher la valeur seule, aucune mention de statut — surtout pas
+ *     « Non mesuré » sous un chiffre qui existe) ;
+ *   • `no_data` — pas de réponse (afficher « Non renseigné », pas de
+ *     valeur, pas de badge de statut).
+ */
+export type RatioStatus = "above" | "below" | "no_benchmark" | "no_data";
 
 export interface AuditRatio {
   key: string;
@@ -73,6 +82,13 @@ export interface AuditRatio {
    * print) doit inverser sa lecture. Défaut : `false`.
    */
   higherIsWorse?: boolean;
+  /**
+   * `true` = ratio conservé dans la structure pour compat, mais NE DOIT
+   * PAS être rendu — c'est un dérivé d'un autre ratio déjà présent
+   * (ex. `chuteCompromisActePercent` = 100 − `compromisToActePercent` :
+   * même fait métier, ne pas dupliquer à l'écran ni au print).
+   */
+  derived?: boolean;
 }
 
 export interface PracticeFlag {
@@ -89,6 +105,22 @@ export interface Verbatim {
   label: string;
   content: string;
   sourceQuestionIds: string[];
+}
+
+/**
+ * Constat de manque tiré des flags "pratique absente" — version courte
+ * du bloc Pratiques imprimé. Formulation en dur par ID de question
+ * (mapping `PRACTICE_GAP_STATEMENTS`), aucune IA. En attendant le lot
+ * audit-3 qui portera une rédaction plus complète, ce format permet de
+ * livrer un doc client sobre : par thème, une ligne par pratique
+ * absente, phrase de constat.
+ */
+export interface PracticeGap {
+  key: string;
+  theme: PracticeTheme;
+  /** Phrase de constat prête à imprimer, ex. « Pas de trame de découverte vendeur ». */
+  statement: string;
+  sourceQuestionId: string;
 }
 
 export interface NumberedPriority {
@@ -112,13 +144,25 @@ export interface AuditContent {
   };
   practices: {
     flags: PracticeFlag[];
+    /** Constats de manque prêts à imprimer (version courte). */
+    gaps: PracticeGap[];
     verbatims: Verbatim[];
   };
+  /** Pass-through de TOUTES les alertes reçues en entrée. */
   alerts: DiagnosticAlert[];
+  /**
+   * Sous-ensemble des alertes destinées au **commercial** uniquement
+   * (`audience === "internal"`) — données obligatoires manquantes,
+   * préconditions non satisfaites. JAMAIS rendues dans le doc client
+   * ni utilisées pour prioriser la synthèse dirigeant.
+   */
+  internalAlerts: DiagnosticAlert[];
   summary: {
     keyMetrics: AuditRatio[];
+    /** N alertes client les plus sévères — `audience === "client"` uniquement. */
     topAlerts: DiagnosticAlert[];
   };
+  /** Dérivées des alertes client uniquement — jamais des alertes internes. */
   priorities: NumberedPriority[];
 }
 
@@ -154,6 +198,33 @@ export const SUMMARY_KEY_METRICS: readonly string[] = [
   "exclusivityPercent",
   "mandatesAverageDurationMonths",
 ];
+
+/**
+ * Formulation en dur des constats de manque par ID de question — lot
+ * audit-2 (version courte). Chaque entrée s'applique quand la réponse
+ * yesno vaut `false`. Une pratique non listée ici → aucun constat émis
+ * (élargissement contrôlé, pas d'IA). À faire évoluer au lot audit-3.
+ */
+export const PRACTICE_GAP_STATEMENTS: Readonly<Record<string, string>> = {
+  "prospecting-script": "Pas de script de prospection formalisé",
+  "seller-discovery-formalized": "Pas de trame de découverte vendeur",
+  "seller-written-valuation": "Pas d'avis de valeur écrit remis en RDV",
+  "mandates-price-above-market": "Mandats pris régulièrement au-dessus du marché",
+  "buyers-discovery-formalized": "Pas de trame de découverte acquéreur",
+  "buyers-financing-verified": "Financement acquéreur non vérifié avant visites",
+  "db-crm-uptodate": "CRM pas tenu à jour au fil de l'eau",
+  "tools-esignature": "Signature électronique non déployée",
+  "tools-ai-usage": "Aucun outil IA utilisé au quotidien",
+  "tool-team-access": "Outils IA pas partagés à l'équipe",
+  "tool-chatgpt-setup": "ChatGPT sans compte / setup dédié agence",
+  "tool-chatgpt-instructions": "ChatGPT sans instructions personnalisées",
+  "tool-prompts-standard": "Pas de prompts standards partagés",
+  "tool-anti-hallucination": "Aucun garde-fou anti-hallucination sur les prompts",
+  "tool-notebook-created": "NotebookLM non utilisé",
+  "mgmt-coaching-individual": "Pas d'entretien individuel régulier",
+  "exec-manager-reporting": "Pas de reporting régulier au dirigeant",
+  "mgmt-recruitment": "Pas de politique de recrutement structurée",
+};
 
 // Note Google — pas de benchmark ici. `DEFAULT_BENCHMARKS` ne fournit
 // pas de seuil pour une note sur 5, et introduire une valeur en dur
@@ -563,7 +634,8 @@ function computeStatus(
   value: number | null,
   benchmark: number | null
 ): RatioStatus {
-  if (value === null || benchmark === null) return "unknown";
+  if (value === null) return "no_data";
+  if (benchmark === null) return "no_benchmark";
   return value >= benchmark ? "above" : "below";
 }
 
@@ -675,7 +747,7 @@ function buildPerformanceRatios(
       value: perfRateEstimation,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(perfRateEstimation, null),
       sourceQuestionIds: ["perf-rate-estimation"],
     },
     {
@@ -693,7 +765,7 @@ function buildPerformanceRatios(
       value: perfRateExclusivity,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(perfRateExclusivity, null),
       sourceQuestionIds: ["perf-rate-exclusivity"],
     },
     {
@@ -711,7 +783,7 @@ function buildPerformanceRatios(
       value: mandatesAvgMonths,
       unit: "months",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(mandatesAvgMonths, null),
       sourceQuestionIds: ["mandates-average-duration-months"],
       higherIsWorse: true,
     },
@@ -721,7 +793,7 @@ function buildPerformanceRatios(
       value: visitesToOffres,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(visitesToOffres, null),
       sourceQuestionIds: ["visits-per-month", "offers-per-month"],
     },
     {
@@ -754,9 +826,13 @@ function buildPerformanceRatios(
       value: chuteCompromisActe,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(chuteCompromisActe, null),
       sourceQuestionIds: ["chute-compromis-acte-percent"],
       higherIsWorse: true,
+      // Dérivé de `compromisToActePercent` (100 - x). Conservé dans la
+      // structure pour compat (consommateurs externes possibles), mais
+      // filtré du rendu print — ne pas afficher deux fois le même fait.
+      derived: true,
     },
     {
       key: "priceDropPerMonthPercent",
@@ -764,7 +840,7 @@ function buildPerformanceRatios(
       value: priceDrop,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(priceDrop, null),
       sourceQuestionIds: ["commercial-price-drop-per-month-percent"],
     },
     {
@@ -773,7 +849,7 @@ function buildPerformanceRatios(
       value: dbVolume,
       unit: "count",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(dbVolume, null),
       sourceQuestionIds: ["db-volume"],
     },
     {
@@ -782,7 +858,7 @@ function buildPerformanceRatios(
       value: crmUsage,
       unit: "percent",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(crmUsage, null),
       sourceQuestionIds: ["perf-crm-usage"],
     },
     {
@@ -791,7 +867,7 @@ function buildPerformanceRatios(
       value: reviewsCount,
       unit: "count",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(reviewsCount, null),
       sourceQuestionIds: ["google-reviews-count"],
     },
     {
@@ -805,7 +881,7 @@ function buildPerformanceRatios(
       value: reviewsScore,
       unit: "rating_5",
       benchmark: null,
-      status: "unknown",
+      status: computeStatus(reviewsScore, null),
       sourceQuestionIds: ["google-reviews-score"],
     },
   ];
@@ -837,6 +913,24 @@ function buildPracticeFlags(answers: AnswerRecord[]): PracticeFlag[] {
     });
   }
   return flags;
+}
+
+function buildPracticeGaps(flags: PracticeFlag[]): PracticeGap[] {
+  const gaps: PracticeGap[] = [];
+  for (const flag of flags) {
+    if (flag.value !== false) continue;
+    const statement = PRACTICE_GAP_STATEMENTS[flag.sourceQuestionId];
+    if (!statement) continue;
+    const mapping = QUESTION_MAPPING[flag.sourceQuestionId];
+    if (!mapping?.theme) continue;
+    gaps.push({
+      key: flag.sourceQuestionId,
+      theme: mapping.theme,
+      statement,
+      sourceQuestionId: flag.sourceQuestionId,
+    });
+  }
+  return gaps;
 }
 
 function buildVerbatims(answers: AnswerRecord[]): Verbatim[] {
@@ -939,17 +1033,27 @@ export function buildAuditContent(
   const alerts = input.alerts ?? [];
   const topAlertsLimit = input.topAlertsLimit ?? 3;
   const benchmarks = { ...DEFAULT_BENCHMARKS, ...(input.benchmarks ?? {}) };
+  // Séparation structurelle (jamais par matching de texte de code) :
+  // seul le champ `audience` gouverne l'appartenance au doc client
+  // vs à l'encart interne commercial.
+  const clientAlerts = alerts.filter((a) => a.audience === "client");
+  const internalAlerts = alerts.filter((a) => a.audience === "internal");
   const ratios = buildPerformanceRatios(input.answers, benchmarks);
   const flags = buildPracticeFlags(input.answers);
+  const gaps = buildPracticeGaps(flags);
   const verbatims = buildVerbatims(input.answers);
   const completeness = buildCompleteness(input.answers);
-  const summary = buildSummary(ratios, alerts, topAlertsLimit);
-  const priorities = buildPriorities(alerts, topAlertsLimit);
+  // Synthèse dirigeant et priorités : uniquement alertes client. Un
+  // « donnée obligatoire manquante » ne peut pas figurer dans un doc
+  // remis au dirigeant — c'est un signal de pilotage commercial.
+  const summary = buildSummary(ratios, clientAlerts, topAlertsLimit);
+  const priorities = buildPriorities(clientAlerts, topAlertsLimit);
   return {
     completeness,
     performanceChain: { ratios },
-    practices: { flags, verbatims },
+    practices: { flags, gaps, verbatims },
     alerts,
+    internalAlerts,
     summary,
     priorities,
   };

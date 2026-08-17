@@ -85,7 +85,7 @@ describe("Ratios calculés — bloc performance_chain", () => {
       (x) => x.key === "contactsToRdvPercent"
     );
     expect(r?.value).toBeNull();
-    expect(r?.status).toBe("unknown");
+    expect(r?.status).toBe("no_data");
   });
 
   it("tunnel visites → offres → compromis → actes calculé correctement", () => {
@@ -106,11 +106,11 @@ describe("Ratios calculés — bloc performance_chain", () => {
     expect(byKey.get("compromisToActePercent")?.status).toBe("above");
   });
 
-  it("données manquantes → value null, status unknown, JAMAIS de valeur inventée", () => {
+  it("données manquantes → value null, status no_data, JAMAIS de valeur inventée", () => {
     const audit = buildAuditContent({ answers: [] });
     for (const r of audit.performanceChain.ratios) {
       expect(r.value, `${r.key} devrait être null`).toBeNull();
-      expect(r.status).toBe("unknown");
+      expect(r.status).toBe("no_data");
     }
   });
 
@@ -130,8 +130,8 @@ describe("Ratios calculés — bloc performance_chain", () => {
 // Cas particulier — note Google sur 5
 // ---------------------------------------------------------------------------
 
-describe("google-reviews-score — note sur 5 sans benchmark (unknown)", () => {
-  it("valeur 4,6 → value 4.6, unit rating_5, benchmark null, status unknown", () => {
+describe("google-reviews-score — note sur 5 sans benchmark (value_only)", () => {
+  it("valeur 4,6 → value 4.6, unit rating_5, benchmark null, status no_benchmark", () => {
     const answers = [makeAnswer("google-reviews-score", "4,6")];
     const audit = buildAuditContent({ answers });
     const r = audit.performanceChain.ratios.find(
@@ -140,16 +140,16 @@ describe("google-reviews-score — note sur 5 sans benchmark (unknown)", () => {
     expect(r?.value).toBeCloseTo(4.6, 2);
     expect(r?.unit).toBe("rating_5");
     expect(r?.benchmark).toBeNull();
-    expect(r?.status).toBe("unknown");
+    expect(r?.status).toBe("no_benchmark");
   });
 
-  it("valeur 3,8 → status reste unknown (aucun seuil de dupliqué en dur)", () => {
+  it("valeur 3,8 → status no_benchmark (aucun seuil de dupliqué en dur)", () => {
     const answers = [makeAnswer("google-reviews-score", "3.8")];
     const audit = buildAuditContent({ answers });
     const r = audit.performanceChain.ratios.find(
       (x) => x.key === "googleReviewsScore"
     );
-    expect(r?.status).toBe("unknown");
+    expect(r?.status).toBe("no_benchmark");
   });
 });
 
@@ -364,6 +364,7 @@ describe("Alertes — propagation depuis l'entrée, tri par sévérité", () => 
       chapter: 3,
       label: "Info test",
       severity: "info",
+      audience: "client",
       observed: null,
       threshold: null,
     },
@@ -372,6 +373,7 @@ describe("Alertes — propagation depuis l'entrée, tri par sévérité", () => 
       chapter: 4,
       label: "Warning test",
       severity: "warning",
+      audience: "client",
       observed: null,
       threshold: null,
     },
@@ -380,6 +382,7 @@ describe("Alertes — propagation depuis l'entrée, tri par sévérité", () => 
       chapter: 5,
       label: "Error test",
       severity: "error",
+      audience: "client",
       observed: null,
       threshold: null,
     },
@@ -388,6 +391,7 @@ describe("Alertes — propagation depuis l'entrée, tri par sévérité", () => 
       chapter: 6,
       label: "Warning 2",
       severity: "warning",
+      audience: "client",
       observed: null,
       threshold: null,
     },
@@ -424,6 +428,162 @@ describe("Alertes — propagation depuis l'entrée, tri par sévérité", () => 
     const audit = buildAuditContent({ answers: [] });
     expect(audit.priorities).toEqual([]);
     expect(audit.summary.topAlerts).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (4-bis) Séparation audience client vs internal — lot audit-fix
+// ---------------------------------------------------------------------------
+
+describe("Alertes — audience 'internal' JAMAIS dans le doc client", () => {
+  const mixed: DiagnosticAlert[] = [
+    {
+      code: "no_one_prospects",
+      chapter: 3,
+      label: "Personne ne prospecte",
+      severity: "error",
+      audience: "client",
+      observed: null,
+      threshold: null,
+    },
+    {
+      code: "missing_required_data:perf-rate-mandat",
+      chapter: 5,
+      label: "Donnée obligatoire manquante — Taux RDV → mandat",
+      severity: "warning",
+      audience: "internal",
+      observed: null,
+      threshold: null,
+    },
+    {
+      code: "missing_required_data:google-reviews-count",
+      chapter: 9,
+      label: "Donnée obligatoire manquante — Nombre d'avis Google",
+      severity: "warning",
+      audience: "internal",
+      observed: null,
+      threshold: null,
+    },
+  ];
+
+  it("summary.topAlerts ne contient AUCUNE alerte internal", () => {
+    const audit = buildAuditContent({ answers: [], alerts: mixed });
+    expect(
+      audit.summary.topAlerts.every((a) => a.audience === "client")
+    ).toBe(true);
+    expect(audit.summary.topAlerts.map((a) => a.code)).toEqual([
+      "no_one_prospects",
+    ]);
+  });
+
+  it("priorities ne contient AUCUNE alerte internal", () => {
+    const audit = buildAuditContent({ answers: [], alerts: mixed });
+    expect(audit.priorities).toHaveLength(1);
+    expect(audit.priorities[0].sourceAlertCodes).toEqual(["no_one_prospects"]);
+  });
+
+  it("internalAlerts sépare exactement les 2 alertes internes", () => {
+    const audit = buildAuditContent({ answers: [], alerts: mixed });
+    expect(audit.internalAlerts).toHaveLength(2);
+    expect(audit.internalAlerts.every((a) => a.audience === "internal")).toBe(
+      true
+    );
+  });
+
+  it("audit.alerts (pass-through) reste inchangé — les 3 alertes présentes", () => {
+    const audit = buildAuditContent({ answers: [], alerts: mixed });
+    expect(audit.alerts).toHaveLength(3);
+  });
+
+  it("filtrage structural, pas par texte : une alerte client avec 'missing' dans le code passe quand même", () => {
+    const trap: DiagnosticAlert[] = [
+      {
+        code: "missing_offers_signal",
+        chapter: 8,
+        label: "Signal missing dans le code mais audience=client",
+        severity: "warning",
+        audience: "client",
+        observed: null,
+        threshold: null,
+      },
+    ];
+    const audit = buildAuditContent({ answers: [], alerts: trap });
+    expect(audit.summary.topAlerts).toHaveLength(1);
+    expect(audit.summary.topAlerts[0].code).toBe("missing_offers_signal");
+    expect(audit.internalAlerts).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (4-ter) Ratio dérivé — chute compromis→acte non rendu (marqué derived)
+// ---------------------------------------------------------------------------
+
+describe("Ratios dérivés — dédoublonnage chute compromis→acte", () => {
+  it("chuteCompromisActePercent est marqué derived: true", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("chute-compromis-acte-percent", "15")],
+    });
+    const r = audit.performanceChain.ratios.find(
+      (x) => x.key === "chuteCompromisActePercent"
+    );
+    expect(r).toBeDefined();
+    expect(r?.derived).toBe(true);
+  });
+
+  it("compromisToActePercent n'est PAS marqué derived", () => {
+    const audit = buildAuditContent({
+      answers: [
+        makeAnswer("compromis-per-month", "20"),
+        makeAnswer("actes-per-month", "18"),
+      ],
+    });
+    const r = audit.performanceChain.ratios.find(
+      (x) => x.key === "compromisToActePercent"
+    );
+    expect(r?.derived).toBeFalsy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (4-quater) Gaps par thème — bloc Pratiques version courte
+// ---------------------------------------------------------------------------
+
+describe("Practice gaps — constats de manque par thème", () => {
+  it("yesno === false + mapping présent → un gap est émis", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("seller-discovery-formalized", "non")],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "seller-discovery-formalized"
+    );
+    expect(gap).toBeDefined();
+    expect(gap?.statement).toBe("Pas de trame de découverte vendeur");
+    expect(gap?.theme).toBe("seller_rituals");
+  });
+
+  it("yesno === true → aucun gap (la pratique EST présente)", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("seller-discovery-formalized", "oui")],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "seller-discovery-formalized"
+    );
+    expect(gap).toBeUndefined();
+  });
+
+  it("yesno === false SANS mapping → aucun gap (mapping ID explicite requis)", () => {
+    const audit = buildAuditContent({
+      answers: [makeAnswer("mgmt-team-meeting-frequency", "non")],
+    });
+    const gap = audit.practices.gaps.find(
+      (g) => g.sourceQuestionId === "mgmt-team-meeting-frequency"
+    );
+    expect(gap).toBeUndefined();
+  });
+
+  it("aucune réponse → aucun gap", () => {
+    const audit = buildAuditContent({ answers: [] });
+    expect(audit.practices.gaps).toEqual([]);
   });
 });
 
@@ -529,6 +689,7 @@ describe("Bout-à-bout — agence fictive complète", () => {
         chapter: 3,
         label: "Prospection portée par personne",
         severity: "warning",
+        audience: "client",
         observed: null,
         threshold: null,
       },
@@ -537,6 +698,7 @@ describe("Bout-à-bout — agence fictive complète", () => {
         chapter: 5,
         label: "Taux RDV → mandat sous le benchmark",
         severity: "error",
+        audience: "client",
         observed: 25,
         threshold: 40,
       },
@@ -561,12 +723,13 @@ describe("Bout-à-bout — agence fictive complète", () => {
       if (r.value !== null) expect(Number.isFinite(r.value)).toBe(true);
     }
 
-    // Note Google traitée sur 5, sans benchmark (statut unknown)
+    // Note Google traitée sur 5, sans benchmark → value_only :
+    // valeur présente mais aucun repère → status no_benchmark.
     const googleScore = audit.performanceChain.ratios.find(
       (r) => r.key === "googleReviewsScore"
     );
     expect(googleScore?.unit).toBe("rating_5");
-    expect(googleScore?.status).toBe("unknown");
+    expect(googleScore?.status).toBe("no_benchmark");
     expect(googleScore?.benchmark).toBeNull();
   });
 });

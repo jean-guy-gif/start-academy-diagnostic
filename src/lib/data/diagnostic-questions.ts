@@ -54,6 +54,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     required: true,
     choices: ["tous", "certains", "personne"],
     alimente: ["Alerte forte si personne"],
+    optionLabels: { tous: "Tout le monde", certains: "Certains seulement", personne: "Personne" },
   },
   {
     id: "perf-contacts-week",
@@ -108,6 +109,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "yesno",
     required: false,
     showIf: { questionId: "prospecting-who", equals: ["tous", "certains"] },
+    answerLabels: { yes: "Trame écrite utilisée", no: "Au talent, sans support" },
   },
   {
     id: "skill-prospection",
@@ -118,6 +120,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = méthode maîtrisée par toute l'équipe. Malaise, \"certains\", \"il faudrait les former\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Toute l'équipe sait faire", no: "Inégal ou à former" },
   },
   // -------------------------------------------------------------------------
   // Chapitre 4
@@ -153,6 +156,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "choice",
     required: false,
     choices: ["r1_r2", "rdv_unique"],
+    optionLabels: { r1_r2: "R1 + R2", rdv_unique: "RDV unique" },
   },
   {
     id: "seller-discovery-formalized",
@@ -165,6 +169,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "yesno",
     required: true,
     alimente: ["Alerte si non — cause n°1 des mandats surévalués"],
+    answerLabels: { yes: "Trame partagée", no: "Chacun sa méthode" },
   },
   {
     id: "estimation-delivery-delay",
@@ -186,6 +191,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = un avis de valeur écrit est remis systématiquement. Oral ou \"parfois\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Document écrit remis", no: "Oral ou irrégulier" },
   },
   {
     id: "skill-qualification",
@@ -196,6 +202,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = méthode de qualification maîtrisée par l'équipe. Doute ou \"certains oui\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Tri maîtrisé", no: "Au feeling" },
   },
   {
     id: "skill-estimation",
@@ -206,6 +213,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = l'équipe est autonome sur la préparation. \"Ça dépend de qui\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Équipe autonome", no: "Ça dépend de qui" },
   },
   {
     id: "skill-objections",
@@ -216,6 +224,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = réponses structurées connues de l'équipe. Improvisation ou évitement = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Réponses structurées", no: "Improvisation" },
   },
   // -------------------------------------------------------------------------
   // Chapitre 5
@@ -282,6 +291,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "choice",
     required: true,
     choices: ["souvent", "parfois", "jamais"],
+    optionLabels: { souvent: "Souvent, pour rentrer le mandat", parfois: "Parfois, avec stratégie", jamais: "Jamais" },
   },
   {
     id: "skill-price-defense",
@@ -292,6 +302,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = méthode de défense du prix maîtrisée par l'équipe (données marché, comparables). \"Ça dépend de qui\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Prix tenu avec méthode", no: "Ils lâchent souvent" },
   },
   {
     id: "mandates-average-duration-months",
@@ -337,6 +348,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = process de requalification organisé (RDV bilan, renégociation, sortie). Laisser-vieillir = Non.",
     type: "yesno",
     required: true,
+    answerLabels: { yes: "Remise à plat organisée", no: "Ils vieillissent" },
   },
   // -------------------------------------------------------------------------
   // Chapitre 7
@@ -370,6 +382,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = découverte acquéreur structurée avec trame (projet, budget, délai) avant visite. \"On visite et on discute sur place\" = Non.",
     type: "yesno",
     required: true,
+    answerLabels: { yes: "Projet qualifié avant visite", no: "Direct en visite" },
   },
   {
     id: "buyers-financing-verified",
@@ -381,6 +394,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "yesno",
     required: true,
     alimente: ["Alerte forte si non — visites inutiles, chutes compromis"],
+    answerLabels: { yes: "Vérifié avant visites", no: "Découvert à l'offre" },
   },
   // -------------------------------------------------------------------------
   // Chapitre 8
@@ -459,6 +473,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "choice",
     required: true,
     choices: ["oui", "non", "partiellement"],
+    optionLabels: { oui: "À jour", non: "Obsolète", partiellement: "Partiellement" },
   },
   {
     id: "perf-crm-usage",
@@ -485,6 +500,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
       "rapprochement_auto",
       "aucune",
     ],
+    optionLabels: { emailing: "Emailing", sms: "SMS", rapprochement_auto: "Rapprochement automatique", aucune: "Aucune" },
   },
   {
     id: "google-reviews-count",
@@ -516,6 +532,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = process organisé de collecte (moment défini, lien envoyé, relance). \"Les clients contents en laissent\" = Non.",
     type: "yesno",
     required: true,
+    answerLabels: { yes: "Collecte organisée", no: "Au bon vouloir des clients" },
   },
   // -------------------------------------------------------------------------
   // Chapitre 10
@@ -577,6 +594,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = signature électronique en usage réel. \"On l'a mais on s'en sert pas\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "En usage réel", no: "Papier ou inutilisée" },
   },
   {
     id: "tools-ai-usage",
@@ -595,6 +613,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
       "prospection",
       "aucun",
     ],
+    optionLabels: { redaction_annonces: "Rédaction d'annonces", estimation: "Estimation", reponses_avis: "Réponses aux avis", prospection: "Prospection", aucun: "Aucun" },
   },
   {
     id: "tool-chatgpt-usage",
@@ -616,6 +635,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = au moins un usage réel. \"J'en ai entendu parler\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Usage réel dans l'équipe", no: "Inconnu ou jamais testé" },
   },
   {
     id: "tool-team-access",
@@ -626,6 +646,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = accès homogène organisé par l'agence. Comptes persos disparates = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Accès organisé pour tous", no: "Comptes disparates" },
   },
   {
     id: "tool-chatgpt-setup",
@@ -636,6 +657,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = paramétrage effectif (projets, mémoire, préférences). Usage brut = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Paramétré", no: "Page blanche à chaque fois" },
   },
   {
     id: "tool-chatgpt-instructions",
@@ -646,6 +668,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = instructions personnalisées en place. Non sinon.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Personnalisé agence", no: "Réponses génériques" },
   },
   {
     id: "tool-prompts-standard",
@@ -656,6 +679,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = prompts standardisés partagés dans l'équipe. \"Chacun sa méthode\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Prompts partagés", no: "Chacun sa méthode" },
   },
   {
     id: "tool-anti-hallucination",
@@ -667,6 +691,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = réflexes de vérification en place (sources, relecture). Confiance aveugle ou incidents non détectés = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Vérification en place", no: "Confiance aveugle" },
   },
   {
     id: "tool-notebooklm",
@@ -677,6 +702,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = connaît l'outil. Non sinon — et c'est une opportunité de démonstration, pas un reproche.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Connu", no: "Jamais entendu parler" },
   },
   {
     id: "tool-notebook-created",
@@ -688,6 +714,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = au moins un notebook créé avec des documents internes. Non sinon.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Déjà testé avec leurs docs", no: "Jamais essayé" },
   },
   {
     id: "tool-gamma",
@@ -698,6 +725,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = au moins une présentation créée. Non sinon.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Déjà testé", no: "Jamais essayé" },
   },
   // -------------------------------------------------------------------------
   // Chapitre 11
@@ -722,6 +750,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = remontée régulière et organisée vers le manager. \"Je demande quand je m'inquiète\" = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Remontée organisée", no: "À la pêche aux infos" },
   },
   {
     id: "mgmt-coaching-individual",
@@ -732,6 +761,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = coaching individuel régulier en place. Entretien annuel seul ou \"quand ça va mal\" = Non.",
     type: "yesno",
     required: true,
+    answerLabels: { yes: "Points réguliers", no: "Le quotidien mange tout" },
   },
   {
     id: "exec-week-structure",
@@ -742,6 +772,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = semaines structurées (créneaux prospection, RDV, suivi). Improvisation dominante = Non.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Semaines structurées", no: "Au jour le jour" },
   },
   {
     id: "exec-autonomy",
@@ -753,6 +784,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = l'équipe produit sans relance permanente. \"Ça dépend de moi\" = Non — et noter la réaction, elle en dit long.",
     type: "yesno",
     required: false,
+    answerLabels: { yes: "Ça tourne sans lui", no: "Ça repose sur lui" },
   },
   {
     id: "mgmt-indicators-followed",
@@ -785,6 +817,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     hint: "Oui = recrutement en cours ou prévu à court terme. Non sinon.",
     type: "yesno",
     required: true,
+    answerLabels: { yes: "Équipe au complet", no: "En recherche" },
   },
   {
     id: "mgmt-top3-difficulties",

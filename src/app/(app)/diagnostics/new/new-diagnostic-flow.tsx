@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -17,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { isAuditAvailable } from "@/lib/audit/decide-audit-render";
+import { decideResumeEntryPoint } from "@/lib/diagnostics/decide-resume-entry-point";
 import {
   Card,
   CardContent,
@@ -159,7 +161,16 @@ interface AnswerDraft {
 const EMPTY_DRAFT: AnswerDraft = { answer: "", note: "", isWeakSignal: false };
 
 export function NewDiagnosticFlow() {
-  const [step, setStep] = useState<Step>("context");
+  // Chantier reprise-diagnostic — la page /diagnostics/[id] pointe ici
+  // avec `?resume=<id>`. Détection au mount ; l'hydratation se fait
+  // dans un useEffect en aval, une fois `questions` calculé (dépend de
+  // `useMemo`).
+  const searchParams = useSearchParams();
+  const resumeDiagnosticId = searchParams?.get("resume") ?? null;
+
+  const [step, setStep] = useState<Step>(
+    resumeDiagnosticId ? "questions" : "context"
+  );
   const [form, setForm] = useState<ContextForm>(INITIAL_FORM);
 
   const [clientId, setClientId] = useState<string | null>(null);
@@ -172,6 +183,14 @@ export function NewDiagnosticFlow() {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, AnswerDraft>>({});
   const [savedCount, setSavedCount] = useState(0);
+  // Chantier C7 — état de la sauvegarde de LA réponse en cours. Sur
+  // échec réel de persistance (data null), on garde la question à
+  // l'écran et on propose un retry — pattern miroir de
+  // `participantsPersistStatus` déjà en place.
+  const [answerPersistStatus, setAnswerPersistStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "error"; message: string; pendingOptions: { skipped: boolean } }
+  >({ kind: "idle" });
 
   // v1.0b — chaque synthèse intermédiaire n'est présentée qu'une fois,
   // à la sortie de son chapitre. `Passer` ou `Continuer` la marquent
@@ -347,6 +366,56 @@ export function NewDiagnosticFlow() {
     }
     return seen;
   }, [questions]);
+
+  // Chantier reprise-diagnostic — hydratation depuis `?resume=<id>`.
+  // Charge le diagnostic existant, ses réponses, et positionne
+  // savedCount + questionIndex via la fonction pure
+  // `decideResumeEntryPoint`. Une seule exécution : le flag
+  // `resumeHydrated` empêche le re-run en cas de changement de
+  // référence `questions`. En cas d'erreur (diag introuvable, réseau),
+  // le bandeau `error` s'affiche — pas de silence.
+  const [resumeHydrated, setResumeHydrated] = useState(!resumeDiagnosticId);
+  useEffect(() => {
+    if (!resumeDiagnosticId || resumeHydrated) return;
+    let cancelled = false;
+    (async () => {
+      const result = await getDiagnosticSummary(resumeDiagnosticId);
+      if (cancelled) return;
+      if (!result.data) {
+        setError(
+          result.error ??
+            "Reprise impossible — le diagnostic n'a pas pu être chargé."
+        );
+        setResumeHydrated(true);
+        return;
+      }
+      setDiagnosticId(resumeDiagnosticId);
+      setClientId(result.data.diagnostic.clientId);
+      setSummary(result.data);
+      setMode(result.mode);
+      const decision = decideResumeEntryPoint(
+        questions,
+        result.data.answers.map((a) => ({
+          questionId: a.questionId,
+          answer: a.answer,
+          isSkipped: a.isSkipped,
+        }))
+      );
+      setSavedCount(decision.savedCount);
+      if (decision.nextQuestionIndex !== null) {
+        setQuestionIndex(decision.nextQuestionIndex);
+        setStep("questions");
+      } else {
+        // Tout est répondu : le flux passe à finaliser (summary).
+        setQuestionIndex(Math.max(questions.length - 1, 0));
+        setStep("summary");
+      }
+      setResumeHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeDiagnosticId, resumeHydrated, questions]);
   const totalChapterSteps = orderedChapters.length;
   const chapterStepPosition = currentQuestion?.chapter
     ? orderedChapters.indexOf(currentQuestion.chapter) + 1
@@ -479,6 +548,7 @@ export function NewDiagnosticFlow() {
   async function persistAnswer(options: { skipped: boolean }) {
     if (!currentQuestion || !diagnosticId || submitting) return;
     setSubmitting(true);
+    setAnswerPersistStatus({ kind: "idle" });
     const result = await saveDiagnosticAnswer({
       diagnosticId,
       questionId: currentQuestion.id,
@@ -490,6 +560,23 @@ export function NewDiagnosticFlow() {
       isSkipped: options.skipped,
     });
     setMode((prev) => (prev === "local" ? "local" : result.mode));
+
+    // Chantier C7 (audit externe) : plus jamais une barre à 100 % avec
+    // des trous en base. Le curseur n'avance QUE si la persistance a
+    // vraiment eu lieu (`data !== null`). Sinon on propose un retry
+    // sur la même question — savedCount reste inchangé.
+    if (result.data === null) {
+      setAnswerPersistStatus({
+        kind: "error",
+        message:
+          result.error ??
+          "Connexion impossible — vérifiez le réseau et réessayez.",
+        pendingOptions: options,
+      });
+      setSubmitting(false);
+      return;
+    }
+
     if (result.error) setError(result.error);
     setSavedCount((c) => c + 1);
     setSubmitting(false);
@@ -643,6 +730,29 @@ export function NewDiagnosticFlow() {
         </div>
       )}
 
+      {/* Chantier C7 (audit externe) : retry de la sauvegarde de la
+          réponse en cours quand la persistance a réellement échoué. Le
+          curseur n'a PAS avancé et savedCount n'a PAS été incrémenté —
+          la question reste à l'écran, le bandeau propose « Réessayer ». */}
+      {answerPersistStatus.kind === "error" && (
+        <div
+          role="alert"
+          data-testid="answer-persist-error"
+          className="flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="font-medium">{answerPersistStatus.message}</p>
+          <button
+            type="button"
+            onClick={() =>
+              void persistAnswer(answerPersistStatus.pendingOptions)
+            }
+            className="inline-flex h-8 items-center rounded-md border border-destructive/40 bg-white px-3 text-xs font-medium text-destructive hover:bg-destructive/5"
+          >
+            Réessayer
+          </button>
+        </div>
+      )}
+
       {step !== "context" && participantsPersistStatus.kind === "success" && (
         <p className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
           Participants prévisionnels enregistrés.
@@ -746,17 +856,21 @@ function ModeBadge({ mode }: { mode: ServiceMode }) {
       )}
     >
       {isSupabase ? <Cloud className="h-3 w-3" /> : <HardDrive className="h-3 w-3" />}
-      Source : {isSupabase ? "Supabase" : "catalogue local"}
+      {isSupabase ? "Connecté" : "Hors connexion"}
     </Badge>
   );
 }
 
+// Wording lot reprise-diagnostic (C7) : plus jamais de « Fallback
+// local » / « catalogue local » dans un bandeau utilisateur. Langage
+// situation : ce qui s'est passé pour l'utilisateur, pas la mécanique
+// interne du système.
 function FallbackBanner({ error }: { error: string }) {
   return (
     <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-700" />
       <div>
-        <p className="font-medium">Fallback local</p>
+        <p className="font-medium">Connexion impossible — vérifiez le réseau et réessayez</p>
         <p className="text-amber-800/80">{error}</p>
       </div>
     </div>

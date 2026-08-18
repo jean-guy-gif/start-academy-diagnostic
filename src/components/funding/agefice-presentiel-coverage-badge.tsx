@@ -55,7 +55,30 @@ export function AgeficePresentielCoverageBadge(
   props: AgeficePresentielCoverageBadgeProps
 ) {
   const kind = decideAgeficePresentielRender(props);
+  return <AgeficePresentielCoverageBadgeView kind={kind} />;
+}
 
+/**
+ * Variante « verdict pré-calculé » — utilisée quand l'agrégation
+ * multi-participants a déjà été faite en amont (ex. par
+ * `estimateTrainingFunding` qui expose un champ agrégé
+ * `ageficePresentielCoverage: 'badge' | 'alert' | 'none' | null`).
+ *
+ * Consommateur type : la page proposition (proposal-view), qui reçoit
+ * la décision d'affichage déjà tranchée par le moteur pricing — pas
+ * question de la ré-implémenter en JSX inline (correctif 1 du lot
+ * fiabilité). Le test structural
+ * `proposal-view-uses-shared-badge.test.tsx` prouve que la page
+ * importe bien ce composant partagé.
+ *
+ * `null` = décision indisponible (chemin fallback sans trainingHours)
+ * → aucun rendu, comportement neutre.
+ */
+export function AgeficePresentielCoverageBadgeView({
+  kind,
+}: {
+  kind: AgeficePresentielRenderKind | null;
+}) {
   if (kind === "badge") {
     return (
       <span

@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+/**
+ * Correctif 4 lot fiabilité — plafond serverless explicite. Le timeout
+ * LLM côté `callLlm` (55 s par défaut, via `AbortSignal.timeout`) doit
+ * expirer AVANT que Vercel ne coupe la fonction, sinon le fallback
+ * heuristique n'a jamais le temps de renvoyer une réponse. 60 s laisse
+ * la marge nécessaire.
+ */
+export const maxDuration = 60;
+
 import { applyStartAcademyPricing } from "@/lib/pricing/apply-start-academy-pricing";
 import { buildProposalPrompt } from "@/lib/ai/build-proposal-prompt";
 import { buildHeuristicProposal } from "@/lib/ai/heuristic-proposal";
@@ -397,7 +406,8 @@ export async function POST(request: Request) {
             context.diagnostic.expectedParticipants ?? null,
             pricePerHour,
             fundingParticipants.length > 0 ? fundingParticipants : null,
-            context.opcoEpAmountConsumedCurrentYear
+            context.opcoEpAmountConsumedCurrentYear,
+            fundingConfigForPricing
           ),
         };
         result = {

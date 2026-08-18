@@ -128,3 +128,81 @@ describe("Contrat anti-dérive diagnosticQuestions (chantier reformulation)", ()
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Contract tests structurels sur answerLabels / optionLabels
+// Toute drift silencieuse (valeur ajoutée aux choices sans label, ou label
+// posé sur une question qui n'est plus yesno) échoue à la CI.
+// ---------------------------------------------------------------------------
+
+describe("Contract — answerLabels / optionLabels alignés avec le type et les choices", () => {
+  it("chaque optionLabels couvre 100 % des choices déclarés de sa question (pas de valeur orpheline)", () => {
+    const violations: string[] = [];
+    for (const q of diagnosticQuestions) {
+      if (!q.optionLabels) continue;
+      const declared = q.choices ?? [];
+      if (declared.length === 0) {
+        violations.push(
+          `${q.id} : optionLabels défini mais aucun choix déclaré`
+        );
+        continue;
+      }
+      for (const c of declared) {
+        if (!(c in q.optionLabels)) {
+          violations.push(`${q.id} : valeur "${c}" sans libellé dans optionLabels`);
+        }
+      }
+      // Réciproque : une clé de optionLabels doit exister dans choices —
+      // sinon c'est un libellé orphelin (typo, valeur renommée).
+      for (const key of Object.keys(q.optionLabels)) {
+        if (!declared.includes(key)) {
+          violations.push(
+            `${q.id} : clé optionLabels "${key}" absente des choices [${declared.join(", ")}]`
+          );
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("optionLabels n'est autorisé que sur les questions de type choice ou multichoice", () => {
+    const violations: string[] = [];
+    for (const q of diagnosticQuestions) {
+      if (!q.optionLabels) continue;
+      if (q.type !== "choice" && q.type !== "multichoice") {
+        violations.push(
+          `${q.id} : optionLabels défini mais type "${q.type}" (attendu choice ou multichoice)`
+        );
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("answerLabels n'est autorisé que sur les questions de type yesno", () => {
+    const violations: string[] = [];
+    for (const q of diagnosticQuestions) {
+      if (!q.answerLabels) continue;
+      if (q.type !== "yesno") {
+        violations.push(
+          `${q.id} : answerLabels défini mais type "${q.type}" (attendu yesno)`
+        );
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it("answerLabels expose les 2 clés yes et no (aucune n'est vide)", () => {
+    const violations: string[] = [];
+    for (const q of diagnosticQuestions) {
+      if (!q.answerLabels) continue;
+      const { yes, no } = q.answerLabels;
+      if (typeof yes !== "string" || yes.trim().length === 0) {
+        violations.push(`${q.id} : answerLabels.yes vide`);
+      }
+      if (typeof no !== "string" || no.trim().length === 0) {
+        violations.push(`${q.id} : answerLabels.no vide`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});

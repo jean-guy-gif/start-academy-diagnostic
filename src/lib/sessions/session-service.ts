@@ -213,7 +213,7 @@ async function loadProposalForDiagnostic(
 
 export async function createTrainingSession(
   input: CreateTrainingSessionInput
-): Promise<ServiceResult<TrainingSessionViewModel>> {
+): Promise<ServiceResult<TrainingSessionViewModel | null>> {
   const supabase = createSupabaseBrowserClient();
   if (supabase) {
     try {
@@ -258,7 +258,22 @@ export async function createTrainingSession(
 async function persistLocally(
   input: CreateTrainingSessionInput,
   error: string
-): Promise<ServiceResult<TrainingSessionViewModel>> {
+): Promise<ServiceResult<TrainingSessionViewModel | null>> {
+  // Contrat d'échec B5 (audit externe) : hors mode local autorisé, la
+  // persistance échouée ne fabrique PLUS un faux succès avec un UUID
+  // fantôme. `data: null` signale un échec réel — le garde
+  // `if (!sessionResult.data)` côté UI redirige alors vers un vrai
+  // message d'erreur au lieu d'une redirection vers une session
+  // introuvable en base.
+  if (!isLocalFallbackAllowed()) {
+    return {
+      data: null,
+      mode: "local",
+      error:
+        error ||
+        "Création de session impossible (persistance indisponible). Vérifiez la connexion et réessayez.",
+    };
+  }
   const store = readLocal();
   const now = new Date().toISOString();
   const row: LocalSessionRow = {
@@ -597,7 +612,7 @@ function participantRowToRecord(row: {
  */
 export async function saveParticipant(
   input: ParticipantInput
-): Promise<ServiceResult<ParticipantRecord>> {
+): Promise<ServiceResult<ParticipantRecord | null>> {
   const supabase = createSupabaseBrowserClient();
   if (supabase) {
     try {
@@ -661,7 +676,20 @@ function localFallbackParticipant(input: ParticipantInput): ParticipantRecord {
 function saveParticipantLocally(
   input: ParticipantInput,
   error: string
-): ServiceResult<ParticipantRecord> {
+): ServiceResult<ParticipantRecord | null> {
+  // Contrat d'échec B5 (audit externe) : hors mode local autorisé, on
+  // ne fabrique PLUS un faux succès participant avec un UUID fantôme.
+  // L'appelant reçoit data=null + erreur explicite et affiche un vrai
+  // message plutôt qu'une inscription apparente jamais persistée.
+  if (!isLocalFallbackAllowed()) {
+    return {
+      data: null,
+      mode: "local",
+      error:
+        error ||
+        "Enregistrement du participant impossible (persistance indisponible). Vérifiez la connexion et réessayez.",
+    };
+  }
   const store = readParticipants();
   const record = localFallbackParticipant(input);
   store.items.unshift(record);

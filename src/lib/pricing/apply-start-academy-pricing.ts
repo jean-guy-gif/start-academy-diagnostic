@@ -66,6 +66,7 @@ export function applyStartAcademyPricing(
   let eligibleParticipantCount: number | null = null;
   let fundingDisclaimer: string | null = null;
   let ageficePresentielCoverage: Pricing["ageficePresentielCoverage"] = null;
+  let fundingNotes: string[] = [];
   if (participants && participants.length > 0 && costPerParticipant !== null) {
     const summary = estimateTrainingFunding({
       participants,
@@ -80,6 +81,7 @@ export function applyStartAcademyPricing(
     eligibleParticipantCount = summary.eligibleParticipantCount;
     fundingDisclaimer = summary.disclaimer;
     ageficePresentielCoverage = summary.ageficePresentielCoverage;
+    fundingNotes = summary.perParticipantNotes;
   }
 
   return {
@@ -99,5 +101,6 @@ export function applyStartAcademyPricing(
     eligibleParticipantCount,
     fundingDisclaimer,
     ageficePresentielCoverage,
+    fundingNotes,
   };
 }

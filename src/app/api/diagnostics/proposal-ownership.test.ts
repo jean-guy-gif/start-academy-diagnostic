@@ -111,6 +111,7 @@ describe("T-9 PUT /api/diagnostics/[id]/proposal — ownership", () => {
           eligibleParticipantCount: null,
           fundingDisclaimer: null,
           ageficePresentielCoverage: null,
+          fundingNotes: [],
         },
         nextStepsGuide: {
           steps: [

@@ -43,6 +43,7 @@ import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
 import { createTrainingSession } from "@/lib/sessions/session-service";
 import { formatPriceEuros } from "@/lib/pricing/training-pricing";
 import { AgeficePresentielCoverageBadgeView } from "@/components/funding/agefice-presentiel-coverage-badge";
+import { decideFundingNotesRender } from "@/lib/pricing/decide-funding-notes-render";
 
 type Status =
   | { kind: "idle" }
@@ -626,6 +627,11 @@ function ProposalDetails({
 }
 
 function PricingCard({ pricing }: { pricing: StoredProposal["proposal"]["pricing"] }) {
+  // Décision de rendu des notes par participant — fonction pure
+  // (decide-funding-notes-render). Cette variable gouverne à la fois
+  // le rendu ci-dessous ET le garde-fou anti « liste vide » (aucun
+  // conteneur / puce n'est produit si shouldRender=false).
+  const fundingNotesDecision = decideFundingNotesRender(pricing.fundingNotes);
   return (
     <Card className="border-border/60 bg-white">
       <CardHeader>
@@ -645,6 +651,24 @@ function PricingCard({ pricing }: { pricing: StoredProposal["proposal"]["pricing
           <CardDescription className="text-amber-800">
             {pricing.pricingNote}
           </CardDescription>
+        )}
+        {/* Notes par cas participant — micro-PR OPCO note visible.
+            Rendu ssi la fonction pure `decideFundingNotesRender` dit
+            shouldRender=true. Contract test structural (proposal-view-
+            renders-funding-notes.contract.test.ts) refuse tout rendu
+            inline sans passer par cette décision. */}
+        {fundingNotesDecision.shouldRender && (
+          <ul
+            data-testid="funding-notes-list"
+            className="mt-3 space-y-1 rounded-md border border-amber-200 bg-amber-50/50 px-4 py-2 text-xs text-amber-900"
+          >
+            {fundingNotesDecision.notes.map((note, idx) => (
+              <li key={idx} className="flex gap-2">
+                <span aria-hidden>•</span>
+                <span>{note}</span>
+              </li>
+            ))}
+          </ul>
         )}
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-3">

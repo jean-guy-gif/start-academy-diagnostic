@@ -315,6 +315,18 @@ export interface TrainingFundingSummary {
    */
   fundingWarnings: string[];
   /**
+   * Notes distinctes issues des retours `estimateParticipantFunding`
+   * par participant (champ `note`). Déduplication assumée : si
+   * plusieurs participants sont dans le même cas (ex. 3 salariés
+   * éligibles OPCO), la même note n'apparaît qu'UNE fois — c'est le
+   * comportement voulu (une note = un cas métier, pas une note par
+   * personne). Ordre stable (première occurrence gagne).
+   *
+   * Consommé par le rendu proposition (proposal-view) via
+   * `decideFundingNotesRender` — voir lot micro-PR OPCO note visible.
+   */
+  perParticipantNotes: string[];
+  /**
    * Décision agrégée d'affichage pour la branche indé AGEFICE
    * présentiel (chantier 2026-07-20) :
    *   • 'badge' — au moins un indé, TOUS les indés éligibles sont
@@ -388,6 +400,10 @@ export function estimateTrainingFunding(params: {
   const ageficePresentielKinds: Array<"badge" | "alert" | "none"> = [];
   const trainingHoursProvided =
     typeof trainingHours === "number" && trainingHours > 0;
+  // Collecte des notes distinctes retournées par `estimateParticipantFunding`
+  // — ordre stable, dedup assumée (une note = un cas métier).
+  const notesSet = new Set<string>();
+  const perParticipantNotes: string[] = [];
 
   for (const p of participants) {
     // Trace des indés éligibles qui n'ont pas renseigné leur AGEFICE
@@ -419,6 +435,16 @@ export function estimateTrainingFunding(params: {
     });
     estimatedFundingTotal += est.estimatedFundingAmount;
     if (est.eligibility === "potentially_eligible") eligibleCount += 1;
+
+    // Collecte des notes non-nulles distinctes. La note générique
+    // FUNDING_DISCLAIMER n'est PAS remontée ici (elle vit déjà dans
+    // `disclaimer` du summary) — seule une note spécifique au cas
+    // participant remonte (ex. « Salarié éligible OPCO EP — à
+    // confirmer avec l'OPCO »).
+    if (est.note && est.note !== FUNDING_DISCLAIMER && !notesSet.has(est.note)) {
+      notesSet.add(est.note);
+      perParticipantNotes.push(est.note);
+    }
 
     // Décision d'affichage stricte par participant — correctif 1 du lot
     // fiabilité (audit externe) : le badge « 100 % » n'est posé QUE si
@@ -504,6 +530,7 @@ export function estimateTrainingFunding(params: {
     totalParticipantCount: participants.length,
     disclaimer: FUNDING_DISCLAIMER,
     fundingWarnings,
+    perParticipantNotes,
     ageficePresentielCoverage,
   };
 }

@@ -221,6 +221,78 @@ describe("estimateTrainingFunding — agrégation multi-participants", () => {
   });
 });
 
+// -------------------------------------------------------------------------
+// perParticipantNotes — collecte + dedup (micro-PR OPCO note visible)
+// -------------------------------------------------------------------------
+
+describe("perParticipantNotes — collecte + dedup", () => {
+  it("aucun salarié éligible OPCO → aucune note remontée", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: [
+        {
+          professionalStatus: "agent_commercial_independant",
+          previousYearProduction: 15_000,
+        },
+      ],
+    });
+    expect(summary.perParticipantNotes).toEqual([]);
+  });
+
+  it("1 salarié éligible OPCO → note « à confirmer avec l'OPCO » remontée", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: [
+        {
+          professionalStatus: "salarie",
+          previousYearProduction: null,
+          eligibleOpco: true,
+        },
+      ],
+    });
+    expect(summary.perParticipantNotes).toHaveLength(1);
+    expect(summary.perParticipantNotes[0]).toMatch(/à confirmer avec l'OPCO/i);
+  });
+
+  // Dedup ASSUMÉE : une note = un cas métier, pas une par personne.
+  // 3 salariés dans le même cas → une seule ligne.
+  it("3 salariés éligibles OPCO → 1 seule note (dedup assumée : un cas = une ligne)", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: Array.from({ length: 3 }, () => ({
+        professionalStatus: "salarie" as const,
+        previousYearProduction: null,
+        eligibleOpco: true,
+      })),
+    });
+    expect(summary.perParticipantNotes).toHaveLength(1);
+    expect(summary.perParticipantNotes[0]).toMatch(/à confirmer avec l'OPCO/i);
+  });
+
+  it("mix indé + salarié OPCO → 1 note (indé n'en produit aucune spécifique)", () => {
+    const summary = estimateTrainingFunding({
+      costPerParticipant: 4_200,
+      totalBudget: null,
+      participants: [
+        {
+          professionalStatus: "agent_commercial_independant",
+          previousYearProduction: 15_000,
+        },
+        {
+          professionalStatus: "salarie",
+          previousYearProduction: null,
+          eligibleOpco: true,
+        },
+      ],
+    });
+    expect(summary.perParticipantNotes).toHaveLength(1);
+    expect(summary.perParticipantNotes[0]).toMatch(/à confirmer avec l'OPCO/i);
+  });
+});
+
 describe("estimateOpcoBudget", () => {
   it("2 salariés éligibles × 2 500 € = 5 000 € (défaut MVP)", () => {
     const b = estimateOpcoBudget(2);

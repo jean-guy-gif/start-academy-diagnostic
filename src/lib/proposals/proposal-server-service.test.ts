@@ -65,6 +65,7 @@ const VALID_PROPOSAL_JSON = {
     eligibleParticipantCount: null,
     fundingDisclaimer: null,
     ageficePresentielCoverage: null,
+    fundingNotes: [],
   },
   nextStepsGuide: {
     steps: [

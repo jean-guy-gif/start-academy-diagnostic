@@ -149,6 +149,7 @@ function buildPricing(
     eligibleParticipantCount: null,
     fundingDisclaimer: null,
     ageficePresentielCoverage: null,
+    fundingNotes: [],
   };
 }
 

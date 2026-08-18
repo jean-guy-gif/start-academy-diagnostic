@@ -74,6 +74,14 @@ export const PricingSchema = z
       .nullable()
       .optional()
       .default(null),
+    /**
+     * Notes distinctes issues des estimations par participant
+     * (dedupliquées côté moteur — même cas métier = une seule note).
+     * `.default([])` garantit la rétro-compat : les proposal_json
+     * persistés en base AVANT ce lot n'ont pas ce champ et parsent
+     * proprement en `fundingNotes = []` (test legacy dédié).
+     */
+    fundingNotes: z.array(z.string()).optional().default([]),
   })
   .superRefine((value, ctx) => {
     if (value.costPerParticipant === null) {

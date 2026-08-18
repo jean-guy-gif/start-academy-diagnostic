@@ -78,7 +78,7 @@ describe("estimateParticipantFunding — rétro-compat MVP (pas de config)", () 
     expect(est.note).toMatch(/à compléter/i);
   });
 
-  it("salarié éligible OPCO → cap à 2 500 € annuels (défaut MVP)", () => {
+  it("salarié éligible OPCO → funding neutralisé (correctif 3 : jamais « 0 € reste » sur la base du cap par-salarié)", () => {
     const est = estimateParticipantFunding({
       professionalStatus: "salarie",
       previousYearProduction: null,
@@ -86,8 +86,9 @@ describe("estimateParticipantFunding — rétro-compat MVP (pas de config)", () 
       eligibleOpco: true,
     });
     expect(est.eligibility).toBe("potentially_eligible");
-    expect(est.estimatedFundingAmount).toBe(OPCO_EP_ANNUAL_CAP_DEFAULT);
-    expect(est.estimatedRemainingCost).toBe(4_200 - OPCO_EP_ANNUAL_CAP_DEFAULT);
+    expect(est.estimatedFundingAmount).toBe(0);
+    expect(est.estimatedRemainingCost).toBe(4_200);
+    expect(est.note).toMatch(/à confirmer avec l'OPCO/i);
   });
 
   it("salarié non éligible OPCO → non éligible, coût total à charge", () => {
@@ -146,7 +147,7 @@ describe("estimateParticipantFunding — override via config runtime", () => {
 });
 
 describe("estimateTrainingFunding — agrégation multi-participants", () => {
-  it("cumule les estimations et compte les éligibles sans passer config", () => {
+  it("cumule les estimations : indé éligible compte, salarié OPCO neutralisé (correctif 3)", () => {
     const summary = estimateTrainingFunding({
       costPerParticipant: 4_200,
       totalBudget: 20_000,
@@ -166,23 +167,28 @@ describe("estimateTrainingFunding — agrégation multi-participants", () => {
         },
       ],
     });
-    // 1 indé éligible (3 000) + 1 salarié OPCO (2 500) = 5 500 €
+    // 1 indé éligible (3 000) + 1 salarié OPCO (0, neutralisé) = 3 000 €
     expect(summary.eligibleParticipantCount).toBe(2);
     expect(summary.estimatedFundingTotal).toBe(
-      MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT + OPCO_EP_ANNUAL_CAP_DEFAULT
+      MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT
     );
-    expect(summary.estimatedRemainingCost).toBe(20_000 - 5_500);
+    expect(summary.estimatedRemainingCost).toBe(
+      20_000 - MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT
+    );
     expect(summary.totalParticipantCount).toBe(3);
     expect(summary.disclaimer).toBe(FUNDING_DISCLAIMER);
   });
 
-  // T-6 (2026-07-08) : test non-optionnel. La route
-  // generate-training-proposal mappait fundingParticipants sans
-  // propager `eligibleOpco`, la branche salarié OPCO ne se déclenchait
-  // jamais. Ce test verrouille le cas mixte : 2 indés éligibles +
-  // 2 salariés OPCO éligibles → le total inclut bien la part OPCO
-  // (2 × 2 500 € = 5 000 €).
-  it("mix 2 indés éligibles + 2 salariés eligibleOpco:true → total inclut la part OPCO", () => {
+  // T-6 (2026-07-08) : le mapping `eligibleOpco` était perdu côté route,
+  // la branche salarié OPCO ne se déclenchait jamais. Le lot fiabilité
+  // (correctif 3) neutralise en plus le CHIFFRAGE de cette branche tant
+  // que l'enveloppe entreprise (chantier B) n'a pas remplacé le cap
+  // par-personne. Ce test verrouille désormais : (a) la propagation de
+  // `eligibleOpco` marque bien les salariés comme éligibles (compte
+  // participant), (b) le total ne compte QUE les indés — les salariés
+  // OPCO contribuent 0 tant que le chantier B n'a pas livré le vrai
+  // calcul.
+  it("mix 2 indés éligibles + 2 salariés eligibleOpco:true → funding = indés uniquement (salariés OPCO neutralisés — correctif 3)", () => {
     const summary = estimateTrainingFunding({
       costPerParticipant: 4_200,
       totalBudget: null,
@@ -207,15 +213,10 @@ describe("estimateTrainingFunding — agrégation multi-participants", () => {
         },
       ],
     });
-    // 2 × 3 000 (AGEFICE) + 2 × 2 500 (OPCO) = 11 000 €
+    // 2 × 3 000 € (indés AGEFICE) + 2 × 0 € (salariés OPCO neutralisés) = 6 000 €
     expect(summary.eligibleParticipantCount).toBe(4);
     expect(summary.estimatedFundingTotal).toBe(
-      2 * MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT +
-        2 * OPCO_EP_ANNUAL_CAP_DEFAULT
-    );
-    // Guard-rail explicite : la part OPCO n'est pas égarée.
-    expect(summary.estimatedFundingTotal).toBeGreaterThanOrEqual(
-      2 * OPCO_EP_ANNUAL_CAP_DEFAULT
+      2 * MAX_ESTIMATED_FUNDING_PER_ELIGIBLE_PARTICIPANT
     );
   });
 });
@@ -347,18 +348,21 @@ describe("Chantier C1 — CA N-1 salarié ignoré côté AGEFICE", () => {
     expect(est.estimatedRemainingCost).toBe(4_200);
   });
 
-  it("salarié avec previousYearProduction=40000 ET eligibleOpco=true → funding = plafond OPCO EP (pas AGEFICE)", () => {
+  it("salarié avec previousYearProduction=40000 ET eligibleOpco=true → funding neutralisé (correctif 3), reste = coût plein", () => {
     const est = estimateParticipantFunding({
       professionalStatus: "salarie",
       previousYearProduction: 40_000,
       eligibleOpco: true,
       costPerParticipant: 4_200,
     });
-    // Financement via la branche salarié OPCO EP (plafond 2 500) —
-    // JAMAIS via l'AGEFICE (le seuil 7 000 € n'est pas testé pour un
-    // salarié).
-    expect(est.estimatedFundingAmount).toBe(OPCO_EP_ANNUAL_CAP_DEFAULT);
+    // La branche salarié OPCO EP est marquée POTENTIALLY_ELIGIBLE
+    // mais le CHIFFRAGE est neutralisé (correctif 3) : jamais de
+    // « 0 € reste » posé sur la base du cap par-personne. Reste =
+    // coût plein, note "à confirmer avec l'OPCO".
     expect(est.eligibility).toBe("potentially_eligible");
+    expect(est.estimatedFundingAmount).toBe(0);
+    expect(est.estimatedRemainingCost).toBe(4_200);
+    expect(est.note).toMatch(/à confirmer avec l'OPCO/i);
   });
 });
 

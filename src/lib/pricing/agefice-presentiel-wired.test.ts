@@ -194,4 +194,91 @@ describe("Chantier AGEFICE présentiel — branchement bout-à-bout", () => {
     );
     expect(pricing.ageficePresentielCoverage).toBe("none");
   });
+
+  // Correctif 1 lot fiabilité — règle stricte d'agrégation : la
+  // présence d'AU MOINS UN salarié empêche le badge "100 %", même si
+  // tous les indés seraient sinon intégralement couverts.
+  it("(strict-agg) 1 indé pleinement couvert + 1 salarié → coverage 'none' (jamais 'badge')", () => {
+    const pricing = applyStartAcademyPricing(
+      HOURS,
+      2,
+      PRICE,
+      [
+        {
+          professionalStatus: "agent_commercial_independant",
+          previousYearProduction: 30_000,
+          ageficeAmountConsumedCurrentYear: 0,
+        },
+        {
+          professionalStatus: "salarie",
+          previousYearProduction: null,
+          eligibleOpco: true,
+        },
+      ]
+    );
+    expect(pricing.ageficePresentielCoverage).not.toBe("badge");
+    expect(pricing.ageficePresentielCoverage).toBe("none");
+  });
+});
+
+// -------------------------------------------------------------------------
+// Correctif 2 lot fiabilité — la config chargée depuis la DB DOIT gouverner
+// le calcul : changer le prix / les seuils en base change le résultat.
+// -------------------------------------------------------------------------
+
+describe("Correctif 2 — config funding_config propagée jusqu'à estimateTrainingFunding", () => {
+  it("changer pricePerHourPerParticipant en base change costPerParticipant et le calcul aval", () => {
+    const participants = [
+      {
+        professionalStatus: "agent_commercial_independant" as const,
+        previousYearProduction: 15_000,
+        ageficeAmountConsumedCurrentYear: 0,
+      },
+    ];
+
+    const pricingCanonique = applyStartAcademyPricing(HOURS, 1, PRICE, participants);
+    const pricingSurcharge = applyStartAcademyPricing(HOURS, 1, PRICE * 2, participants);
+
+    // Preuve directe : le coût par participant double quand le prix
+    // horaire double. Le champ pilote toute la chaîne d'aval.
+    expect(pricingCanonique.costPerParticipant).not.toBeNull();
+    expect(pricingSurcharge.costPerParticipant).toBe(
+      (pricingCanonique.costPerParticipant as number) * 2
+    );
+    expect(pricingSurcharge.totalEstimatedCost).toBe(
+      (pricingCanonique.totalEstimatedCost as number) * 2
+    );
+  });
+
+  it("changer ageficeThreshold via config rejette un indé qui aurait été éligible aux défauts", () => {
+    const participants = [
+      {
+        professionalStatus: "agent_commercial_independant" as const,
+        previousYearProduction: 8_000, // > défaut 7 000 = éligible
+        ageficeAmountConsumedCurrentYear: 0,
+      },
+    ];
+
+    const auxDefauts = applyStartAcademyPricing(
+      HOURS,
+      1,
+      PRICE,
+      participants,
+      null
+    );
+    const avecSurcharge = applyStartAcademyPricing(
+      HOURS,
+      1,
+      PRICE,
+      participants,
+      null,
+      { ageficeThreshold: 10_000 } // > 8 000 → non éligible
+    );
+
+    expect(auxDefauts.eligibleParticipantCount).toBe(1);
+    expect(avecSurcharge.eligibleParticipantCount).toBe(0);
+    // Preuve directe : la config chargée en base gouverne la décision
+    // d'éligibilité — plus aucune constante en dur ne short-circuit
+    // le calcul sur le chemin production.
+  });
 });

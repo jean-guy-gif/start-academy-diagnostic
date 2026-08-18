@@ -2,6 +2,7 @@ import type { Pricing } from "@/lib/ai/proposal-schema";
 import {
   estimateTrainingFunding,
   type ParticipantProfessionalStatus,
+  type RuntimeFundingConfig,
 } from "@/lib/pricing/training-funding";
 import {
   buildPricingNote,
@@ -36,7 +37,19 @@ export function applyStartAcademyPricing(
         ageficeAmountConsumedCurrentYear?: number | null;
       }[]
     | null = null,
-  opcoEpAmountConsumedCurrentYear: number | null = null
+  opcoEpAmountConsumedCurrentYear: number | null = null,
+  /**
+   * Config runtime chargée depuis `funding_config` (seuils AGEFICE,
+   * plafonds OPCO EP, cap horaire présentiel…). Correctif 2 du lot
+   * fiabilité : le chemin production DOIT passer la config lue en base
+   * jusqu'au moteur — plus aucune constante en dur ne doit gouverner
+   * les décisions de plafonnement / éligibilité côté route
+   * `/api/generate-training-proposal`.
+   *
+   * `undefined` = comportement historique (défauts MVP). Réservé aux
+   * tests unitaires qui isolent le module pur.
+   */
+  config?: RuntimeFundingConfig
 ): Pricing {
   const costPerParticipant = calculateCostPerParticipant(
     totalDurationHours,
@@ -60,6 +73,7 @@ export function applyStartAcademyPricing(
       totalBudget: totalEstimatedCost,
       opcoEpAmountConsumedCurrentYear,
       trainingHours: totalDurationHours,
+      config,
     });
     estimatedFundingTotal = summary.estimatedFundingTotal;
     estimatedRemainingCost = summary.estimatedRemainingCost;

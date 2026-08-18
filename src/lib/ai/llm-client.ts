@@ -39,6 +39,29 @@ export const OPENROUTER_ENDPOINT =
  */
 const OPENROUTER_DEFAULT_MAX_TOKENS = 8192;
 const OPENROUTER_MIN_MAX_TOKENS = 1024;
+
+/**
+ * Correctif 4 lot fiabilité (audit externe) — plus jamais d'appel
+ * OpenRouter sans horloge morte. Une génération qui pend au-delà de
+ * cette limite est abandonnée côté client HTTP et le caller bascule
+ * sur le fallback heuristique (comportement testé au niveau route).
+ *
+ * 55 s laisse une marge confortable sous la limite `maxDuration = 60`
+ * exportée par la route `/api/generate-training-proposal`, pour que
+ * le fallback ait le temps de calculer et de renvoyer une réponse
+ * avant l'expiration serverless.
+ */
+const OPENROUTER_DEFAULT_TIMEOUT_MS = 55_000;
+
+function resolveTimeoutMs(): number {
+  const raw = process.env.OPENROUTER_TIMEOUT_MS;
+  if (!raw) return OPENROUTER_DEFAULT_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return OPENROUTER_DEFAULT_TIMEOUT_MS;
+  }
+  return parsed;
+}
 // Hard cap relevé pour absorber les routes longues
 // (`/generate-training-support` produit ~10 k tokens pour 9 modules,
 // `/design-training-support` peut dépasser 14 k tokens sur 50+ slides
@@ -109,10 +132,15 @@ export async function callLlm(
     response_format: { type: "json_object" },
   };
 
+  // Correctif 4 : AbortSignal.timeout — l'appel est abandonné après
+  // OPENROUTER_TIMEOUT_MS (défaut 55 s). Un timeout throw une
+  // `TimeoutError`/`AbortError` que le caller route rattrape et convertit
+  // en bascule fallback heuristique.
   const response = await fetch(OPENROUTER_ENDPOINT, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(resolveTimeoutMs()),
   });
 
   if (!response.ok) {

@@ -244,34 +244,36 @@ export function estimateParticipantFunding(
 
   if (professionalStatus === "salarie") {
     if (eligibleOpco === true) {
-      // OPCO EP: cap par-participant = comportement HEAD, INCORRECT vs
-      // PRD §3 (enveloppe entreprise globale). Refonte au chantier B.
-      // Le champ opcoEpAmountConsumedCurrentYear est collecté mais PAS
-      // utilisé ici — B fera le vrai calcul.
+      // OPCO EP salarié éligible — le calcul par-participant historique
+      // est INCORRECT vs PRD §3 (enveloppe entreprise partagée, barème
+      // par effectif). Cf. commentaire long conservé ci-dessous. Tant
+      // que le chantier B n'a pas livré le vrai calcul enveloppe, on
+      // NE fabrique PAS de « reste à charge 0 € » sur la base du calcul
+      // par-salarié — ce chiffre trompe le commercial et le dirigeant.
       //
-      // Détail du bug préexistant : `opcoEpAnnualCap` est un plafond
-      // par-personne (2 500 €), alors que le PRD dit que l'OPCO EP est
-      // une enveloppe entreprise partagée (2 500 € total, barème par
-      // effectif < 11 / 11-50 / > 50). Résultat actuel : le funding
-      // OPCO EP est multiplié par le nombre de salariés éligibles
-      // (surestimation historique). Le chantier A a délibérément choisi
-      // de NE PAS retrancher `opcoEpAmountConsumedCurrentYear` ici pour
-      // ne pas figer un chiffre différent et faux (retranchement
-      // dupliqué N fois par N salariés). Le chantier B devra à la fois :
+      // Comportement lot fiabilité (audit externe correctif 3) :
+      // financement estimé = 0 (pas de sous-estimation du budget),
+      // reste à charge = coût plein, note explicite « à confirmer avec
+      // l'OPCO ». Le badge « 100 % » agrégé (cf. `ageficePresentielKinds`
+      // ci-dessous) ne peut par conséquent pas être posé quand il y a
+      // au moins un salarié — c'est la règle stricte du correctif 1.
+      //
+      // Détail du bug historique conservé pour mémoire (chantier B) :
+      // `opcoEpAnnualCap` est un plafond par-personne (2 500 €), alors
+      // que le PRD dit que l'OPCO EP est une enveloppe entreprise
+      // partagée (barème par effectif < 11 / 11-50 / > 50). Chantier B
+      // devra à la fois :
       //   1. remplacer ce cap par-personne par un calcul enveloppe
       //      entreprise (barème par effectif),
       //   2. retrancher `opcoEpAmountConsumedCurrentYear` UNE SEULE fois
       //      de cette enveloppe globale.
-      const cap = Math.min(costPerParticipant, opcoEpAnnualCap);
-      const estimatedFundingAmount = roundEuro(cap);
-      const estimatedRemainingCost = roundEuro(
-        Math.max(costPerParticipant - estimatedFundingAmount, 0)
-      );
+      void opcoEpAnnualCap; // conservé dans la signature pour chantier B.
       return {
         eligibility: "potentially_eligible",
-        estimatedFundingAmount,
-        estimatedRemainingCost,
-        note: FUNDING_DISCLAIMER,
+        estimatedFundingAmount: 0,
+        estimatedRemainingCost: roundEuro(costPerParticipant),
+        note:
+          "Salarié éligible OPCO EP — enveloppe entreprise à confirmer avec l'OPCO. Le calcul par-personne actuel n'est pas conforme au PRD (chantier B) ; aucun chiffrage n'est appliqué en attendant.",
       };
     }
     return {
@@ -418,28 +420,40 @@ export function estimateTrainingFunding(params: {
     estimatedFundingTotal += est.estimatedFundingAmount;
     if (est.eligibility === "potentially_eligible") eligibleCount += 1;
 
-    // Décision d'affichage par indé, si trainingHours propagé.
-    // CA N-1 manquant → 'alert'.
-    // CA N-1 sous seuil → non éligible, aucun indicateur.
-    // CA N-1 > seuil : dérive du résultat calculé (envelope inconnue
-    // → 'alert' ; couverture 100 % → 'badge' ; reste > 0 → 'none').
-    if (
-      trainingHoursProvided &&
-      p.professionalStatus === "agent_commercial_independant"
-    ) {
-      if (p.previousYearProduction === null) {
-        ageficePresentielKinds.push("alert");
-      } else if (p.previousYearProduction > ageficeThreshold) {
-        const r = est.ageficePresentielResult;
-        if (!r || r.alert !== null || r.envelopeRemaining === null) {
+    // Décision d'affichage stricte par participant — correctif 1 du lot
+    // fiabilité (audit externe) : le badge « 100 % » n'est posé QUE si
+    // tous les participants (indés ET salariés) sont intégralement
+    // couverts. Chaque participant contribue donc désormais une valeur
+    // à `ageficePresentielKinds`, plus jamais un skip silencieux qui
+    // permettrait au badge de passer par-dessus un cas non couvert.
+    if (trainingHoursProvided) {
+      if (p.professionalStatus === "agent_commercial_independant") {
+        if (p.previousYearProduction === null) {
           ageficePresentielKinds.push("alert");
-        } else if (r.isFullyCovered && r.resteACharge === 0) {
-          ageficePresentielKinds.push("badge");
+        } else if (p.previousYearProduction > ageficeThreshold) {
+          const r = est.ageficePresentielResult;
+          if (!r || r.alert !== null || r.envelopeRemaining === null) {
+            ageficePresentielKinds.push("alert");
+          } else if (r.isFullyCovered && r.resteACharge === 0) {
+            ageficePresentielKinds.push("badge");
+          } else {
+            ageficePresentielKinds.push("none");
+          }
         } else {
+          // Indé sous seuil AGEFICE — non éligible AGEFICE présentiel.
+          // Contribue « none » (empêche le badge par la règle stricte).
           ageficePresentielKinds.push("none");
         }
+      } else if (p.professionalStatus === "salarie") {
+        // Salarié — chiffrage OPCO EP neutralisé (correctif 3). Aucun
+        // salarié ne peut prétendre à un badge « 100 % » tant que le
+        // chantier B n'a pas remplacé le cap par-personne par un calcul
+        // enveloppe entreprise. Contribue « none » systématiquement.
+        ageficePresentielKinds.push("none");
+      } else {
+        // Statut "autre" ou null — pas de couverture connue, « none ».
+        ageficePresentielKinds.push("none");
       }
-      // CA sous seuil → non éligible AGEFICE, pas d'entrée.
     }
   }
 

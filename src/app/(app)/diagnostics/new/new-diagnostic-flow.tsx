@@ -620,7 +620,12 @@ export function NewDiagnosticFlow() {
         <StepBreadcrumb step={step} />
       </div>
 
-      {error && step !== "context" && <FallbackBanner error={error} />}
+      {/* Correctif 5 lot fiabilité : le bandeau d'erreur s'affiche AUSSI
+          sur l'étape contexte. Un échec de « Commencer le diagnostic »
+          (createClient / createDiagnostic) doit être visible au même
+          endroit, sinon le bouton reste apparemment inactif sans qu'on
+          sache pourquoi (échec silencieux). */}
+      {error && <FallbackBanner error={error} />}
 
       {step !== "context" && participantsPersistStatus.kind === "error" && (
         <div

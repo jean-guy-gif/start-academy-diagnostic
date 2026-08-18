@@ -42,6 +42,7 @@ import {
 import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
 import { createTrainingSession } from "@/lib/sessions/session-service";
 import { formatPriceEuros } from "@/lib/pricing/training-pricing";
+import { AgeficePresentielCoverageBadgeView } from "@/components/funding/agefice-presentiel-coverage-badge";
 
 type Status =
   | { kind: "idle" }
@@ -632,22 +633,13 @@ function PricingCard({ pricing }: { pricing: StoredProposal["proposal"]["pricing
           <CardTitle className="font-heading text-xl text-[#00527a]">
             Tarification
           </CardTitle>
-          {pricing.ageficePresentielCoverage === "badge" && (
-            <span
-              data-testid="agefice-full-coverage-badge"
-              className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-900"
-            >
-              Prise en charge 100 %
-            </span>
-          )}
-          {pricing.ageficePresentielCoverage === "alert" && (
-            <span
-              data-testid="agefice-rights-check-alert"
-              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900"
-            >
-              Droits à vérifier
-            </span>
-          )}
+          {/* Composant partagé — plus jamais de JSX badge inline
+              ici. Le test structural
+              `proposal-view-uses-shared-badge.contract.test.ts` échoue
+              si cet import disparaît (correctif 1 lot fiabilité). */}
+          <AgeficePresentielCoverageBadgeView
+            kind={pricing.ageficePresentielCoverage}
+          />
         </div>
         {pricing.pricingNote && (
           <CardDescription className="text-amber-800">

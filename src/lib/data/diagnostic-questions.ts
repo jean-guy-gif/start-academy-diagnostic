@@ -42,6 +42,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
       "aucune",
     ],
     alimente: ["Reco modules prospection"],
+    optionLabels: { pige: "Pige", terrain: "Terrain", boitage: "Boîtage", reseaux_sociaux: "Réseaux sociaux", recommandation: "Recommandation", notoriete: "Notoriété", farming: "Farming secteur", aucune: "Aucune" },
   },
   {
     id: "prospecting-who",
@@ -181,6 +182,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "choice",
     required: false,
     choices: ["immediat", "48h", "plus"],
+    optionLabels: { immediat: "Immédiate, en RDV", "48h": "Sous 48 h", plus: "Plus de 48 h" },
   },
   {
     id: "seller-written-valuation",
@@ -328,6 +330,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     required: true,
     choices: ["hebdo", "bimensuel", "a_la_demande", "jamais"],
     alimente: ["Alerte si a_la_demande ou jamais"],
+    optionLabels: { hebdo: "Hebdomadaire", bimensuel: "Bimensuel", a_la_demande: "À la demande", jamais: "Jamais" },
   },
   {
     id: "commercial-price-drop-per-month-percent",
@@ -584,6 +587,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
       "pap",
       "autre",
     ],
+    optionLabels: { leboncoin: "Leboncoin", seloger: "SeLoger", logic_immo: "Logic-Immo", bien_ici: "Bien'ici", pap: "PAP", autre: "Autre" },
   },
   {
     id: "tools-esignature",
@@ -740,6 +744,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
     type: "choice",
     required: true,
     choices: ["hebdo", "mensuelle", "irreguliere", "aucune"],
+    optionLabels: { hebdo: "Hebdomadaire", mensuelle: "Mensuelle", irreguliere: "Irrégulière", aucune: "Aucune" },
   },
   {
     id: "exec-manager-reporting",
@@ -807,6 +812,7 @@ export const diagnosticQuestions: DiagnosticQuestion[] = [
       "aucun",
     ],
     alimente: ["Alerte forte si aucun"],
+    optionLabels: { ca: "Chiffre d'affaires", mandats: "Mandats", exclusivite: "Exclusivités", visites: "Visites", compromis: "Compromis", actes: "Actes", avis: "Avis clients", aucun: "Aucun" },
   },
   {
     id: "mgmt-recruitment",

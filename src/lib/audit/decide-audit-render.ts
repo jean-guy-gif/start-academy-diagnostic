@@ -20,6 +20,76 @@
 import type { AuditContent, AuditRatio } from "./build-audit-content";
 
 /**
+ * Seuil minimum de complétude sous lequel un audit est considéré
+ * incomplet — l'impression est désactivée et un avertissement bloque
+ * la restitution (correction issue d'un audit imprimé réel : un audit
+ * à 40 % de complétude a été présenté à un dirigeant sans que
+ * l'incomplétude ne soit visible côté commercial).
+ *
+ * Constante configurable — modifier ici suffit à changer le seuil
+ * partout. 70 % correspond à ~48 / 69 réponses.
+ */
+export const AUDIT_COMPLETENESS_THRESHOLD_PERCENT = 70;
+
+export type AuditPrintReadinessKind = "ready" | "incomplete" | "empty";
+
+export interface AuditPrintReadinessDecision {
+  kind: AuditPrintReadinessKind;
+  /** Pourcentage de complétude (0-100), toujours renvoyé pour affichage. */
+  percent: number;
+  answeredCount: number;
+  totalCount: number;
+  /** Message utilisateur — présent quand kind ≠ 'ready'. */
+  message: string | null;
+}
+
+/**
+ * Décision de prêt-à-imprimer — fonction pure, testable sans DOM.
+ *
+ * Renvoie :
+ *   • `ready` — au moins {AUDIT_COMPLETENESS_THRESHOLD_PERCENT} % de
+ *     réponses. Le bouton Imprimer est actif, aucun bandeau.
+ *   • `incomplete` — sous le seuil MAIS au moins 1 réponse. Bandeau
+ *     amber bloquant, bouton Imprimer désactivé.
+ *   • `empty` — 0 réponse. Autre écran (delegué à `decideAuditRender`).
+ */
+export function decideAuditPrintReadiness(
+  audit: AuditContent
+): AuditPrintReadinessDecision {
+  const { answeredCount, totalCount } = audit.completeness;
+  // On compare le pourcentage RÉEL (non-arrondi) au seuil, sinon
+  // 48/69 = 69,57 % pourrait passer « ready » après arrondi à 70.
+  // L'arrondi reste utilisé uniquement pour l'AFFICHAGE.
+  const realPercent = totalCount > 0 ? (answeredCount / totalCount) * 100 : 0;
+  const percent = Math.round(realPercent);
+  if (answeredCount === 0) {
+    return {
+      kind: "empty",
+      percent: 0,
+      answeredCount,
+      totalCount,
+      message: null,
+    };
+  }
+  if (realPercent < AUDIT_COMPLETENESS_THRESHOLD_PERCENT) {
+    return {
+      kind: "incomplete",
+      percent,
+      answeredCount,
+      totalCount,
+      message: `Audit incomplet : ${answeredCount} réponses sur ${totalCount} (${percent} %). Complétez le diagnostic avant la restitution.`,
+    };
+  }
+  return {
+    kind: "ready",
+    percent,
+    answeredCount,
+    totalCount,
+    message: null,
+  };
+}
+
+/**
  * Prédicat pur — un audit peut-il être généré pour ce diagnostic ?
  * Source unique de vérité pour tous les CTA « Voir l'audit » du
  * parcours (liste, wizard, page recommandation) — garantit l'alignement

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { AuditContent, AuditRatio } from "./build-audit-content";
 import {
+  AUDIT_COMPLETENESS_THRESHOLD_PERCENT,
+  decideAuditPrintReadiness,
   decideAuditRender,
   decideRatioDisplay,
   isAuditAvailable,
@@ -39,6 +41,66 @@ function makeAudit(overrides: Partial<AuditContent> = {}): AuditContent {
     ...overrides,
   };
 }
+
+describe("decideAuditPrintReadiness — seuil 70 % (correction audit imprimé)", () => {
+  function makeAuditWith(answered: number, total = 69): AuditContent {
+    return makeAudit({
+      completeness: {
+        answeredCount: answered,
+        totalCount: total,
+        byBlock: {
+          performance_chain: { answeredCount: 0, totalCount: 30 },
+          practices: { answeredCount: 0, totalCount: 39 },
+        },
+      },
+    });
+  }
+
+  it("seuil externalisé (AUDIT_COMPLETENESS_THRESHOLD_PERCENT = 70)", () => {
+    expect(AUDIT_COMPLETENESS_THRESHOLD_PERCENT).toBe(70);
+  });
+
+  it("0 réponse → 'empty' (délégué à decideAuditRender, pas de message)", () => {
+    const d = decideAuditPrintReadiness(makeAuditWith(0));
+    expect(d.kind).toBe("empty");
+    expect(d.message).toBeNull();
+  });
+
+  it("30 réponses / 69 (43 %) → 'incomplete', message bloquant explicite", () => {
+    const d = decideAuditPrintReadiness(makeAuditWith(30));
+    expect(d.kind).toBe("incomplete");
+    expect(d.percent).toBe(43);
+    expect(d.message).toMatch(/incomplet/i);
+    expect(d.message).toMatch(/30 réponses sur 69/);
+    expect(d.message).toMatch(/Complétez le diagnostic/i);
+  });
+
+  it("48 réponses / 69 (69,57 %) → 'incomplete' (juste sous 70 %)", () => {
+    const d = decideAuditPrintReadiness(makeAuditWith(48));
+    expect(d.kind).toBe("incomplete");
+    expect(d.percent).toBe(70); // arrondi à 70 mais 48/69 = 69,57 %
+    // Le test qui compte : ready ou incomplete ? Utilisons 47 pour lever l'ambiguïté.
+  });
+
+  it("47 réponses / 69 (68 %) → 'incomplete' sans ambiguïté", () => {
+    const d = decideAuditPrintReadiness(makeAuditWith(47));
+    expect(d.kind).toBe("incomplete");
+    expect(d.percent).toBe(68);
+  });
+
+  it("49 réponses / 69 (71 %) → 'ready' (au-dessus du seuil)", () => {
+    const d = decideAuditPrintReadiness(makeAuditWith(49));
+    expect(d.kind).toBe("ready");
+    expect(d.percent).toBe(71);
+    expect(d.message).toBeNull();
+  });
+
+  it("69 réponses / 69 → 'ready' (100 %)", () => {
+    const d = decideAuditPrintReadiness(makeAuditWith(69));
+    expect(d.kind).toBe("ready");
+    expect(d.percent).toBe(100);
+  });
+});
 
 describe("decideRatioDisplay — trois états distincts", () => {
   it("with_benchmark : value + benchmark → chiffre + badge de statut", () => {

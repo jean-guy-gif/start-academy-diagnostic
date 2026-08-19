@@ -200,15 +200,34 @@ export interface BuildAuditContentInput {
 // ---------------------------------------------------------------------------
 
 /**
- * Les 3 ratios (par `key`) qui alimentent `summary.keyMetrics`. Modifier
- * cette constante suffit à changer la sélection dans la synthèse
- * dirigeant — pas d'autre changement nécessaire.
+ * Liste de PRÉFÉRENCE des ratios candidats pour la synthèse dirigeant.
+ * `buildSummary` prend les 3 PREMIERS ratios de cette liste qui sont
+ * effectivement renseignés (`value !== null`) — jamais un ratio « Non
+ * mesuré » ne sera affiché en synthèse.
+ *
+ * Si moins de 3 ratios sont renseignés, la synthèse n'affiche que
+ * ceux qui existent. Étendre la liste (candidats supplémentaires en
+ * fin) reste sans effet tant que les 3 premiers renseignés sont
+ * suffisants — c'est l'ordre de préférence qui prime.
+ *
+ * Correction issue de l'audit imprimé — ne pas afficher de chiffre
+ * absent en synthèse (« Non mesuré » dans une case en gras, c'est
+ * contre-productif pour un dirigeant).
  */
 export const SUMMARY_KEY_METRICS: readonly string[] = [
+  // Ratios prioritaires (ordre de préférence produit) :
   "estimationToMandatPercent",
   "exclusivityPercent",
   "mandatesAverageDurationMonths",
+  // Repli : si les 3 premiers ne sont pas renseignés, on remonte
+  // ces candidats dans l'ordre — évite un keyMetrics vide.
+  "contactsToRdvPercent",
+  "compromisToActePercent",
+  "offresToCompromisPercent",
 ];
+
+/** Nombre max de key metrics affichés en synthèse (contrainte design). */
+export const SUMMARY_KEY_METRICS_MAX = 3;
 
 /**
  * Formulation en dur des constats de manque pour les questions de type
@@ -1091,11 +1110,16 @@ function buildSummary(
   alerts: DiagnosticAlert[],
   topAlertsLimit: number
 ): AuditContent["summary"] {
+  // Liste de préférence : on parcourt les candidats et on prend les
+  // SUMMARY_KEY_METRICS_MAX premiers qui sont RÉELLEMENT renseignés
+  // (value !== null). Jamais un « Non mesuré » en synthèse (correction
+  // audit imprimé).
   const byKey = new Map(ratios.map((r) => [r.key, r]));
   const keyMetrics: AuditRatio[] = [];
   for (const key of SUMMARY_KEY_METRICS) {
+    if (keyMetrics.length >= SUMMARY_KEY_METRICS_MAX) break;
     const found = byKey.get(key);
-    if (found) keyMetrics.push(found);
+    if (found && found.value !== null) keyMetrics.push(found);
   }
   const topAlerts = [...alerts]
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))

@@ -12,6 +12,16 @@ import {
 } from "@/lib/proposals/proposal-server-service";
 
 export const runtime = "nodejs";
+/**
+ * `force-dynamic` NON-NÉGOCIABLE (classe de bug la plus insidieuse du
+ * projet : une donnée correctement écrite en base mais jamais relue à
+ * cause d'un cache stale). Sans ce flag, une réponse GET peut être
+ * cachée par le Vercel edge / le browser après un PUT, et l'utilisateur
+ * voit son édition « disparaître » au reload alors qu'elle est bien
+ * persistée. Le contract test `proposal-route-no-cache.contract.test.ts`
+ * échoue si ce flag disparaît.
+ */
+export const dynamic = "force-dynamic";
 
 interface RouteContext {
   params: Promise<{ id: string }>;

@@ -43,6 +43,7 @@ import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
 import { createTrainingSession } from "@/lib/sessions/session-service";
 import { formatPriceEuros } from "@/lib/pricing/training-pricing";
 import { PRICE_PER_HOUR_PER_PARTICIPANT } from "@/lib/pricing/agefice-presentiel-funding";
+import { describeCoverageState } from "@/lib/pricing/apply-commercial-discount";
 import { AgeficePresentielCoverageBadgeView } from "@/components/funding/agefice-presentiel-coverage-badge";
 import { saveProposal } from "@/lib/proposals/save-proposal";
 
@@ -364,13 +365,22 @@ export function ProposalView({ diagnosticId }: Props) {
             // Recharge la proposition persistée pour refléter fidèlement
             // ce que la base a accepté (source de vérité).
             const reload = await getProposalByDiagnosticId(diagnosticId);
-            if (reload.data) {
-              setStatus({
-                kind: "ready",
-                stored: reload.data,
-                warnings: [],
-              });
+            if (!reload.data) {
+              // Save OK, mais rechargement échoué. Règle produit
+              // (revue #49) : NE PAS sortir du mode édition. L'user
+              // garde son travail à l'écran, un warning s'affiche pour
+              // qu'il actualise la page manuellement.
+              return {
+                ok: true,
+                warning:
+                  "Enregistré. Le rechargement a échoué — actualisez la page pour vérifier.",
+              };
             }
+            setStatus({
+              kind: "ready",
+              stored: reload.data,
+              warnings: [],
+            });
             setEditMode(false);
             setLastRegeneratedAt(new Date().toISOString());
             return { ok: true };
@@ -764,32 +774,115 @@ function PricingCard({ pricing }: { pricing: StoredProposal["proposal"]["pricing
         />
         {pricing.estimatedFundingTotal !== null &&
         pricing.estimatedFundingTotal > 0 ? (
-          <>
-            <Stat
-              label={
-                pricing.eligibleParticipantCount
-                  ? `Prise en charge potentielle (${pricing.eligibleParticipantCount} éligible${pricing.eligibleParticipantCount > 1 ? "s" : ""})`
-                  : "Prise en charge potentielle"
-              }
-              value={formatPriceEuros(pricing.estimatedFundingTotal)}
-            />
-            <Stat
-              label="Reste à charge estimatif"
-              value={
-                pricing.estimatedRemainingCost !== null
-                  ? formatPriceEuros(pricing.estimatedRemainingCost)
-                  : "—"
-              }
-            />
-          </>
+          <Stat
+            label={
+              pricing.eligibleParticipantCount
+                ? `Prise en charge potentielle (${pricing.eligibleParticipantCount} éligible${pricing.eligibleParticipantCount > 1 ? "s" : ""})`
+                : "Prise en charge potentielle"
+            }
+            value={formatPriceEuros(pricing.estimatedFundingTotal)}
+          />
         ) : null}
       </CardContent>
+
+      {/* Bloc reste-à-charge + éventuelle remise commerciale.
+          Règle produit (test manuel revue) : la remise DOIT être
+          visible en mode lecture (pas seulement dans l'éditeur), avec
+          reste à charge, geste commercial, reste final. Le MOTIF de
+          la remise reste interne — jamais affiché ici. */}
+      <PricingRemainingBreakdown pricing={pricing} />
+
       {pricing.fundingDisclaimer ? (
         <p className="mx-6 mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           {pricing.fundingDisclaimer}
         </p>
       ) : null}
     </Card>
+  );
+}
+
+function PricingRemainingBreakdown({
+  pricing,
+}: {
+  pricing: StoredProposal["proposal"]["pricing"];
+}) {
+  const totalCost = pricing.totalEstimatedCost;
+  const funding = pricing.estimatedFundingTotal;
+  const restBeforeDiscount =
+    totalCost !== null && funding !== null
+      ? Math.max(totalCost - funding, 0)
+      : pricing.estimatedRemainingCost;
+  const finalRest = pricing.estimatedRemainingCost;
+  const discount = pricing.commercialDiscount;
+  const coverageKind = describeCoverageState(pricing);
+
+  // Si on n'a rien à montrer côté reste (funding ne s'applique pas /
+  // valeurs nulles) et pas de remise, on n'affiche rien — on reste
+  // sobre en mode lecture.
+  if (
+    (restBeforeDiscount === null || restBeforeDiscount === undefined) &&
+    !discount
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="mx-6 mb-4 space-y-1.5 rounded-md border border-border/60 bg-muted/20 px-4 py-3 text-sm">
+      {restBeforeDiscount !== null && restBeforeDiscount !== undefined && (
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">
+            Reste à charge{discount ? " (avant remise)" : ""}
+          </span>
+          <span
+            className="font-medium"
+            data-testid="pricing-rest-before-discount"
+          >
+            {formatPriceEuros(restBeforeDiscount)}
+          </span>
+        </div>
+      )}
+      {discount && (
+        <div
+          className="flex items-center justify-between text-[#00527a]"
+          data-testid="pricing-commercial-discount-line"
+        >
+          <span>Geste commercial Start Academy</span>
+          <span className="font-medium">
+            −{formatPriceEuros(discount.valueEuros)}
+          </span>
+        </div>
+      )}
+      {finalRest !== null && finalRest !== undefined && (
+        <div className="flex items-center justify-between border-t border-border/60 pt-1.5 text-[#00527a]">
+          <span className="font-semibold">
+            {discount ? "Reste à charge final" : "Reste à charge estimatif"}
+          </span>
+          <span
+            className="font-bold"
+            data-testid="pricing-final-rest"
+          >
+            {formatPriceEuros(finalRest)}
+          </span>
+        </div>
+      )}
+      {coverageKind === "offered_via_discount" && (
+        <p
+          className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] text-sky-900"
+          data-testid="pricing-coverage-label"
+        >
+          Reste à charge offert par un geste commercial — le financement
+          AGEFICE/OPCO reste inchangé.
+        </p>
+      )}
+      {coverageKind === "fully_covered_by_funding" && (
+        <p
+          className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-900"
+          data-testid="pricing-coverage-label"
+        >
+          Formation intégralement prise en charge par le financement.
+        </p>
+      )}
+    </div>
   );
 }
 

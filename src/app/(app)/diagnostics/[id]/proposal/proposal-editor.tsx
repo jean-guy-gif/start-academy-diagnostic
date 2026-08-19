@@ -56,7 +56,23 @@ import {
 
 export interface ProposalEditorProps {
   proposal: Proposal;
-  onSave: (edited: Proposal) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Retour :
+   *   • `{ ok: true }` — save + rechargement OK, l'éditeur SORT du mode
+   *     édition (le parent le démonte).
+   *   • `{ ok: true, warning }` — save OK mais rechargement échoué :
+   *     l'éditeur RESTE monté, affiche le warning, l'utilisateur garde
+   *     son travail à l'écran (règle produit critique).
+   *   • `{ ok: false, error }` — save échoué : erreur affichée inline,
+   *     l'éditeur reste monté avec le state courant.
+   */
+  onSave: (
+    edited: Proposal
+  ) => Promise<
+    | { ok: true; warning?: undefined }
+    | { ok: true; warning: string }
+    | { ok: false; error?: string }
+  >;
   onCancel: () => void;
   /** Prix horaire par participant — nécessaire pour recalcul coût. */
   pricePerHourPerParticipant: number;
@@ -74,6 +90,10 @@ export function ProposalEditor({
   const [proposal, setProposal] = useState<Proposal>(initialProposal);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Warning « save OK mais rechargement fail » — l'éditeur reste
+  // monté, l'utilisateur garde son travail. Règle produit : perdre
+  // l'affichage d'une édition réussie est pire que le bug initial.
+  const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Remise — état d'édition, converti au moment de l'application via
@@ -281,10 +301,18 @@ export function ProposalEditor({
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
+    setSaveWarning(null);
     const result = await onSave(proposal);
     setSaving(false);
     if (!result.ok) {
       setSaveError(result.error ?? "Sauvegarde impossible.");
+      return;
+    }
+    // ok === true. Si un warning est présent (reload fail), le parent
+    // NE démonte PAS l'éditeur — on affiche le warning et on garde le
+    // travail à l'écran. Sinon (ok pur), le parent démonte.
+    if ("warning" in result && result.warning) {
+      setSaveWarning(result.warning);
     }
   }
 
@@ -379,6 +407,16 @@ export function ProposalEditor({
         </div>
       )}
 
+      {saveWarning && (
+        <div
+          role="alert"
+          data-testid="editor-save-warning"
+          className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          {saveWarning}
+        </div>
+      )}
+
       {/* Résumé exécutif — texte libre */}
       <section className="rounded-lg border border-border/60 bg-white p-4">
         <label className="mb-2 flex flex-col gap-1">
@@ -423,7 +461,10 @@ export function ProposalEditor({
         {pickerOpen && (
           <div className="mb-4">
             <CatalogueModulePicker
-              excludedModuleIds={[]}
+              presentModuleNames={program.modules.map((m) => m.title)}
+              initialModuleNames={snapshot.trainingProgram.modules.map(
+                (m) => m.title
+              )}
               onSelect={handleAddModule}
               onClose={() => setPickerOpen(false)}
             />

@@ -150,6 +150,8 @@ function buildPricing(
     fundingDisclaimer: null,
     ageficePresentielCoverage: null,
     fundingNotes: [],
+    commercialDiscount: null,
+    finalCost: null,
   };
 }
 

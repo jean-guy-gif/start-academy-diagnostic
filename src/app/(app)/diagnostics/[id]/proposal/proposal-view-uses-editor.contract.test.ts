@@ -54,22 +54,20 @@ describe("proposal-view — branchement futur ProposalEditor (garde-fou PR-1)", 
   // honorer en PR-2 sans casser la CI PR-1.
   // ────────────────────────────────────────────────────────────
 
-  it.skip("PR-2 : proposal-view importe ProposalEditor depuis @/app/(app)/diagnostics/[id]/proposal/proposal-editor", () => {
-    // décommenter en PR-2 :
+  it("PR-2 : proposal-view importe ProposalEditor depuis ./proposal-editor", () => {
     const importPattern =
       /import\s*\{[^}]*\bProposalEditor\b[^}]*\}\s*from\s*["']\.\/proposal-editor["']/;
     expect(importPattern.test(SOURCE)).toBe(true);
   });
 
-  it.skip("PR-2 : proposal-view utilise ProposalEditor dans le JSX (composant réellement branché, pas juste importé)", () => {
-    // décommenter en PR-2 :
+  it("PR-2 : proposal-view utilise ProposalEditor dans le JSX (composant réellement branché, pas juste importé)", () => {
     const usagePattern = /<ProposalEditor[\s>]/;
     expect(usagePattern.test(SOURCE)).toBe(true);
   });
 
-  it.skip("PR-2 : proposal-view expose un handler onSave qui appelle applyCommercialDiscount / edit-program (branchement effectif)", () => {
-    // décommenter en PR-2 : proposal-editor DOIT importer les 2
-    // moteurs — pas juste ré-implémenter la logique inline.
+  it("PR-2 : proposal-editor importe applyCommercialDiscount ET edit-program (branchement effectif des moteurs purs)", () => {
+    // proposal-editor DOIT importer les 2 moteurs — pas juste
+    // ré-implémenter la logique inline.
     const editorPath = resolve(__dirname, "proposal-editor.tsx");
     const editorSource = readFileSync(editorPath, "utf-8");
     const importDiscount =

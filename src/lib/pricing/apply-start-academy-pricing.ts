@@ -102,5 +102,9 @@ export function applyStartAcademyPricing(
     fundingDisclaimer,
     ageficePresentielCoverage,
     fundingNotes,
+    // Pas de remise à la génération — l'éditeur (lot B2 PR-2) la
+    // pose via `applyCommercialDiscount` après validation dirigeant.
+    commercialDiscount: null,
+    finalCost: null,
   };
 }

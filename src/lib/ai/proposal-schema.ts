@@ -82,6 +82,31 @@ export const PricingSchema = z
      * proprement en `fundingNotes = []` (test legacy dédié).
      */
     fundingNotes: z.array(z.string()).optional().default([]),
+    /**
+     * Remise commerciale saisie par le commercial dans l'éditeur de
+     * proposition (lot B2). `unit` = comment la valeur est SAISIE
+     * (« euros » ou « percent »), `valueEuros` = équivalent normalisé
+     * en € (source de vérité pour le recalcul aval). `reason` = motif
+     * obligatoire non vide dès qu'une remise est appliquée. `null` =
+     * pas de remise (état par défaut, rétro-compat legacy).
+     */
+    commercialDiscount: z
+      .object({
+        unit: z.enum(["euros", "percent"]),
+        valueEuros: z.number().nonnegative(),
+        percentDisplay: z.number().nonnegative(),
+        reason: z.string().min(1, "Motif de remise requis"),
+      })
+      .nullable()
+      .optional()
+      .default(null),
+    /**
+     * Coût final après remise = `totalEstimatedCost − commercialDiscount.valueEuros`,
+     * jamais négatif. `null` = pas de remise appliquée (finalCost effectif
+     * = totalEstimatedCost). Recalculé côté client par
+     * `applyCommercialDiscount` et re-validé côté serveur au PUT.
+     */
+    finalCost: z.number().nonnegative().nullable().optional().default(null),
   })
   .superRefine((value, ctx) => {
     if (value.costPerParticipant === null) {

@@ -110,10 +110,16 @@ export function ProposalEditor({
   );
 
   /**
-   * Recalcule `costPerParticipant`, `totalEstimatedCost` et efface la
-   * remise appliquée (elle deviendrait incohérente après changement
-   * de durée totale). L'utilisateur doit ré-appliquer la remise avec
-   * son motif après avoir édité les modules.
+   * Recalcule `costPerParticipant`, `totalEstimatedCost`, puis
+   * ré-applique la remise saisie (unit + value + motif) sur le
+   * NOUVEAU reste à charge — la saisie utilisateur est CONSERVÉE.
+   *
+   * Règle produit : « conservation de la saisie au changement de
+   * durée » (revue #49). Le motif ne doit pas être re-tapé, la
+   * remise ne doit pas être re-appliquée à la main — le nouveau
+   * reste à charge peut simplement être différent, la fonction pure
+   * `applyCommercialDiscount` gère le plafonnage / le warning /
+   * l'erreur si le nouveau reste est nul.
    */
   function recomputeAfterDurationChange(nextProgram: Proposal["trainingProgram"]) {
     const totalHours = nextProgram.totalDurationHours;
@@ -124,22 +130,54 @@ export function ProposalEditor({
       count !== null && costPerParticipant !== null
         ? costPerParticipant * count
         : null;
+    const funding = proposal.pricing.estimatedFundingTotal;
+    // Reste théorique post-changement (funding INCHANGÉ par la remise —
+    // règle non-transfert de dette). Sert de base à la ré-application.
+    const nextRest =
+      total !== null && funding !== null
+        ? Math.max(total - funding, 0)
+        : total;
+    const basePricing: Pricing = {
+      ...proposal.pricing,
+      costPerParticipant,
+      totalEstimatedCost: total,
+      commercialDiscount: null,
+      finalCost: null,
+      estimatedRemainingCost: nextRest,
+    };
+
+    const rawValue = Number(discountValue);
+    const hasDraftDiscount =
+      discountValue.trim().length > 0 &&
+      discountReason.trim().length > 0 &&
+      Number.isFinite(rawValue) &&
+      rawValue >= 0;
+
+    if (!hasDraftDiscount) {
+      setProposal({
+        ...proposal,
+        trainingProgram: nextProgram,
+        pricing: basePricing,
+      });
+      setDiscountError(null);
+      setDiscountWarning(null);
+      return;
+    }
+
+    const result = applyCommercialDiscount(basePricing, {
+      unit: discountUnit,
+      value: rawValue,
+      reason: discountReason,
+    });
     setProposal({
       ...proposal,
       trainingProgram: nextProgram,
-      pricing: {
-        ...proposal.pricing,
-        costPerParticipant,
-        totalEstimatedCost: total,
-        commercialDiscount: null,
-        finalCost: null,
-      },
+      pricing: result.error ? basePricing : result.pricing,
     });
-    setDiscountUnit("euros");
-    setDiscountValue("");
-    setDiscountReason("");
-    setDiscountError(null);
-    setDiscountWarning(null);
+    setDiscountError(result.error);
+    setDiscountWarning(result.warning);
+    // On NE remet PAS à zéro discountUnit / discountValue / discountReason
+    // — la saisie utilisateur reste visible pour ajustement immédiat.
   }
 
   function handleAddModule(m: Parameters<typeof buildProposalModuleFromCatalog>[0]) {

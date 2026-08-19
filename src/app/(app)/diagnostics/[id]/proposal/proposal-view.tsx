@@ -42,7 +42,11 @@ import {
 import { getDiagnosticSummary } from "@/lib/diagnostics/diagnostic-service";
 import { createTrainingSession } from "@/lib/sessions/session-service";
 import { formatPriceEuros } from "@/lib/pricing/training-pricing";
+import { PRICE_PER_HOUR_PER_PARTICIPANT } from "@/lib/pricing/agefice-presentiel-funding";
 import { AgeficePresentielCoverageBadgeView } from "@/components/funding/agefice-presentiel-coverage-badge";
+import { saveProposal } from "@/lib/proposals/save-proposal";
+
+import { ProposalEditor } from "./proposal-editor";
 import { decideFundingNotesRender } from "@/lib/pricing/decide-funding-notes-render";
 
 type Status =
@@ -72,6 +76,10 @@ export function ProposalView({ diagnosticId }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [creatingSession, setCreatingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  // Toggle édition inline — lot B2 PR-2. Passage à `true` monte
+  // <ProposalEditor>, qui gère son propre state local et appelle
+  // `saveProposal` au save (PUT /api/diagnostics/[id]/proposal).
+  const [editMode, setEditMode] = useState(false);
   // Toast horodaté après un PUT réussi. `null` = pas de toast en cours.
   // Auto-effacé après REGEN_TOAST_MS.
   const [lastRegeneratedAt, setLastRegeneratedAt] = useState<string | null>(
@@ -301,14 +309,72 @@ export function ProposalView({ diagnosticId }: Props) {
         </div>
       )}
 
-      {status.kind === "ready" && (
-        <ProposalDetails
-          stored={status.stored}
-          warnings={status.warnings}
-          onRegenerate={runGeneration}
-          onCreateSession={handleCreateSession}
-          creatingSession={creatingSession}
-          sessionError={sessionError}
+      {status.kind === "ready" && !editMode && (
+        <>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setEditMode(true)}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "h-9 gap-1.5 border-[#00527a]/20 text-[#00527a] hover:bg-[#eaf5ff]"
+              )}
+              data-testid="proposal-edit-toggle"
+            >
+              Modifier la proposition
+            </button>
+          </div>
+          <ProposalDetails
+            stored={status.stored}
+            warnings={status.warnings}
+            onRegenerate={runGeneration}
+            onCreateSession={handleCreateSession}
+            creatingSession={creatingSession}
+            sessionError={sessionError}
+          />
+        </>
+      )}
+
+      {status.kind === "ready" && editMode && (
+        <ProposalEditor
+          proposal={status.stored.proposal}
+          pricePerHourPerParticipant={(() => {
+            const cost = status.stored.proposal.pricing.costPerParticipant;
+            const hours =
+              status.stored.proposal.trainingProgram.totalDurationHours;
+            return cost !== null && hours > 0
+              ? cost / hours
+              : PRICE_PER_HOUR_PER_PARTICIPANT;
+          })()}
+          onCancel={() => setEditMode(false)}
+          onSave={async (edited) => {
+            const result = await saveProposal({
+              diagnosticId,
+              recommendationId: status.stored.recommendationId ?? null,
+              proposal: edited,
+              source: status.stored.source,
+              provider: status.stored.provider,
+              model: status.stored.model,
+              generatedAt: status.stored.generatedAt,
+              notes: [],
+            });
+            if (!result.ok) {
+              return { ok: false, error: result.error };
+            }
+            // Recharge la proposition persistée pour refléter fidèlement
+            // ce que la base a accepté (source de vérité).
+            const reload = await getProposalByDiagnosticId(diagnosticId);
+            if (reload.data) {
+              setStatus({
+                kind: "ready",
+                stored: reload.data,
+                warnings: [],
+              });
+            }
+            setEditMode(false);
+            setLastRegeneratedAt(new Date().toISOString());
+            return { ok: true };
+          }}
         />
       )}
     </div>

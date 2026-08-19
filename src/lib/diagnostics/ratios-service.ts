@@ -28,6 +28,33 @@ import {
 import { diagnosticQuestions } from "@/lib/data/diagnostic-questions";
 import type { DiagnosticChapter, DiagnosticQuestion } from "@/types";
 
+/**
+ * Humanise une valeur technique de `choice` / `multichoice` en
+ * cherchant son libellé dans les `optionLabels` du questionnaire
+ * (source de vérité `diagnosticQuestions`). Fallback : capitalise
+ * la première lettre et remplace les underscores par des espaces —
+ * suffisant pour éviter les tokens techniques bruts (« a_la_demande »)
+ * dans les messages d'alerte.
+ *
+ * Correction audit imprimé — le contract test
+ * `ratios-service-alerts-no-underscore.contract.test.ts` échoue si
+ * un label d'alerte contient un underscore (chemin technique laissé
+ * par erreur).
+ */
+export function humanizeChoiceValue(
+  questionId: string,
+  rawValue: string
+): string {
+  const q = diagnosticQuestions.find((x) => x.id === questionId);
+  const label = q?.optionLabels?.[rawValue];
+  if (label && label.length > 0) return label;
+  // Fallback : « a_la_demande » → « À la demande » (best effort si
+  // optionLabels manque).
+  const cleaned = rawValue.trim().replace(/_/g, " ");
+  if (cleaned.length === 0) return rawValue;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 export type AlertSeverity = "info" | "warning" | "error";
 
 /**
@@ -346,7 +373,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "contacts_to_rdv_below_benchmark",
       chapter: 3,
-      label: `Contacts → RDV à ${ratios.contactsToRdvPercent} % (benchmark ${benchmarks.contactsToRdvPercent} %)`,
+      label: `Contacts → RDV à ${ratios.contactsToRdvPercent} % (repère ${benchmarks.contactsToRdvPercent} %)`,
       severity: "warning",
       audience: "client",
       observed: ratios.contactsToRdvPercent,
@@ -381,7 +408,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "rdv_to_mandat_below_benchmark",
       chapter: 5,
-      label: `RDV → mandat à ${ratios.rdvToMandatPercent} % (benchmark ${benchmarks.rdvToMandatPercent} %)`,
+      label: `RDV → mandat à ${ratios.rdvToMandatPercent} % (repère ${benchmarks.rdvToMandatPercent} %)`,
       severity: "warning",
       audience: "client",
       observed: ratios.rdvToMandatPercent,
@@ -397,7 +424,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "exclusivity_below_benchmark",
       chapter: 5,
-      label: `% exclusivité à ${exclu} % (benchmark ${benchmarks.exclusivityPercent} %)`,
+      label: `% exclusivité à ${exclu} % (repère ${benchmarks.exclusivityPercent} %)`,
       severity: "warning",
       audience: "client",
       observed: exclu,
@@ -417,7 +444,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "seller_followup_weak",
       chapter: 6,
-      label: `Suivi vendeur ${followupFrequency.answer.replace("_", " ")} — vendeur peu tenu au courant`,
+      label: `Suivi vendeur ${humanizeChoiceValue("commercial-followup-frequency", followupFrequency.answer!)} — vendeur peu tenu au courant`,
       severity: "warning",
       audience: "client",
       observed: null,
@@ -452,7 +479,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "visits_per_vente_high",
       chapter: 8,
-      label: `Visites/vente = ${ratios.visitesParVente} (benchmark < ${benchmarks.visitsPerActe})`,
+      label: `Visites/vente = ${ratios.visitesParVente} (repère < ${benchmarks.visitsPerActe})`,
       severity: "warning",
       audience: "client",
       observed: ratios.visitesParVente,
@@ -468,7 +495,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "offres_to_compromis_below_benchmark",
       chapter: 8,
-      label: `Offres → compromis à ${ratios.offresToCompromisPercent} % (benchmark ${benchmarks.offresToCompromisPercent} %)`,
+      label: `Offres → compromis à ${ratios.offresToCompromisPercent} % (repère ${benchmarks.offresToCompromisPercent} %)`,
       severity: "warning",
       audience: "client",
       observed: ratios.offresToCompromisPercent,
@@ -482,7 +509,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "compromis_to_acte_below_benchmark",
       chapter: 8,
-      label: `Compromis → acte à ${ratios.compromisToActePercent} % (benchmark ${benchmarks.compromisToActePercent} %)`,
+      label: `Compromis → acte à ${ratios.compromisToActePercent} % (repère ${benchmarks.compromisToActePercent} %)`,
       severity: "warning",
       audience: "client",
       observed: ratios.compromisToActePercent,
@@ -498,7 +525,7 @@ export function computeRatiosAndAlerts(
     alerts.push({
       code: "reviews_per_vente_below_benchmark",
       chapter: 9,
-      label: `Avis / ventes = ${ratios.avisParVentePercent} % (benchmark ${benchmarks.reviewsPerVentePercent} %) — gisement e-réputation`,
+      label: `Avis / ventes = ${ratios.avisParVentePercent} % (repère ${benchmarks.reviewsPerVentePercent} %) — gisement e-réputation`,
       severity: "warning",
       audience: "client",
       observed: ratios.avisParVentePercent,

@@ -4,6 +4,7 @@ import { AlertCircle, ArrowLeft, FileText } from "lucide-react";
 
 import type { AuditContent } from "@/lib/audit/build-audit-content";
 import {
+  decideAuditPrintReadiness,
   decideAuditRender,
   decideRatioDisplay,
 } from "@/lib/audit/decide-audit-render";
@@ -140,6 +141,11 @@ export function AuditView(props: AuditViewProps) {
     );
   }
 
+  // Décision de prêt-à-imprimer (correction audit imprimé) — désactive
+  // le bouton print + affiche un bandeau bloquant sous 70 % de
+  // complétude. Constante externalisée dans decide-audit-render.
+  const printReady = decideAuditPrintReadiness(props.audit);
+
   return (
     <div className="audit-page mx-auto max-w-4xl px-6 py-6 print:max-w-none print:px-0 print:py-0">
       {/* Barre d'actions (écran uniquement) */}
@@ -151,8 +157,24 @@ export function AuditView(props: AuditViewProps) {
           <ArrowLeft className="h-3.5 w-3.5" />
           Retour au diagnostic
         </Link>
-        <PrintButton />
+        <PrintButton disabled={printReady.kind !== "ready"} />
       </div>
+
+      {printReady.kind === "incomplete" && (
+        <div
+          role="alert"
+          data-testid="audit-incomplete-banner"
+          className="mb-6 flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 print:hidden sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="font-medium">{printReady.message}</p>
+          <Link
+            href={`/diagnostics/${props.diagnosticId}`}
+            className="inline-flex h-9 items-center rounded-md border border-amber-400 bg-white px-3 text-xs font-medium text-amber-900 hover:bg-amber-100"
+          >
+            Reprendre le diagnostic
+          </Link>
+        </div>
+      )}
 
       {/* Encart interne commercial — masqué en print, JAMAIS dans le
           doc client. Distingué structurellement par `audience` sur

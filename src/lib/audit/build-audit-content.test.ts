@@ -804,30 +804,62 @@ describe("Contract — mapping des gaps aligné avec les types du questionnaire"
 // (5) Synthèse dirigeant — 3 chiffres clés
 // ---------------------------------------------------------------------------
 
-describe("Synthèse dirigeant — SUMMARY_KEY_METRICS", () => {
-  it("summary.keyMetrics = ratios sélectionnés par SUMMARY_KEY_METRICS", () => {
+describe("Synthèse dirigeant — SUMMARY_KEY_METRICS liste de préférence (correction audit imprimé)", () => {
+  it("3 ratios prioritaires renseignés → keyMetrics = les 3, dans l'ordre de préférence", () => {
     const answers = [
       makeAnswer("perf-rate-mandat", "42"),
       makeAnswer("mandates-exclusivity-percent", "35"),
       makeAnswer("mandates-average-duration-months", "5"),
     ];
     const audit = buildAuditContent({ answers });
-    expect(audit.summary.keyMetrics).toHaveLength(SUMMARY_KEY_METRICS.length);
+    expect(audit.summary.keyMetrics).toHaveLength(3);
     expect(audit.summary.keyMetrics.map((r) => r.key)).toEqual([
       "estimationToMandatPercent",
       "exclusivityPercent",
       "mandatesAverageDurationMonths",
     ]);
-    expect(audit.summary.keyMetrics[0].value).toBe(42);
-    expect(audit.summary.keyMetrics[1].value).toBe(35);
-    expect(audit.summary.keyMetrics[2].value).toBe(5);
   });
 
-  it("valeurs absentes → keyMetrics présents avec value=null", () => {
+  it("moins de 3 renseignés → keyMetrics ne contient QUE ce qui existe (jamais de « Non mesuré » en synthèse)", () => {
+    const answers = [
+      makeAnswer("perf-rate-mandat", "42"), // 1 seul renseigné
+    ];
+    const audit = buildAuditContent({ answers });
+    expect(audit.summary.keyMetrics).toHaveLength(1);
+    expect(audit.summary.keyMetrics[0].key).toBe("estimationToMandatPercent");
+    expect(audit.summary.keyMetrics[0].value).toBe(42);
+  });
+
+  it("aucun ratio renseigné → keyMetrics est VIDE (aucun « Non mesuré » affiché)", () => {
     const audit = buildAuditContent({ answers: [] });
-    for (const km of audit.summary.keyMetrics) {
-      expect(km.value).toBeNull();
-    }
+    expect(audit.summary.keyMetrics).toEqual([]);
+  });
+
+  it("les 3 prioritaires manquent mais les repli sont renseignés → repli utilisés dans l'ordre", () => {
+    // Aucun des 3 prioritaires. Les repli (contactsToRdv, compromis→acte,
+    // offres→compromis) sont calculés via des ratios d'input.
+    const answers = [
+      makeAnswer("prospecting-contacts-per-month", "100"),
+      makeAnswer("seller-meetings-per-month", "25"), // contactsToRdv = 25%
+      makeAnswer("compromis-per-month", "20"),
+      makeAnswer("actes-per-month", "18"), // compromisToActe = 90%
+    ];
+    const audit = buildAuditContent({ answers });
+    // On attend les 2 repli renseignés en ordre : contactsToRdv puis compromisToActe.
+    expect(audit.summary.keyMetrics.length).toBeGreaterThanOrEqual(2);
+    const keys = audit.summary.keyMetrics.map((r) => r.key);
+    expect(keys).toContain("contactsToRdvPercent");
+    expect(keys).toContain("compromisToActePercent");
+    // Vérifie ordre de préférence : contactsToRdvPercent avant compromisToActePercent.
+    expect(keys.indexOf("contactsToRdvPercent")).toBeLessThan(
+      keys.indexOf("compromisToActePercent")
+    );
+  });
+
+  it("liste de préférence exposée avec au moins les 3 ratios prioritaires en tête", () => {
+    // Sanity : le premier de la liste doit rester `estimationToMandatPercent`.
+    expect(SUMMARY_KEY_METRICS[0]).toBe("estimationToMandatPercent");
+    expect(SUMMARY_KEY_METRICS.length).toBeGreaterThanOrEqual(3);
   });
 });
 

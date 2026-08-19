@@ -15,6 +15,7 @@ import {
 import type { Pricing, Proposal } from "@/lib/ai/proposal-schema";
 import {
   applyCommercialDiscount,
+  describeCoverageState,
   removeCommercialDiscount,
 } from "@/lib/pricing/apply-commercial-discount";
 import {
@@ -251,10 +252,20 @@ export function ProposalEditor({
 
   const pricing: Pricing = proposal.pricing;
   const program = proposal.trainingProgram;
-  const effectiveCost =
-    pricing.finalCost !== null
-      ? pricing.finalCost
-      : pricing.totalEstimatedCost;
+  // Règle métier (post-review) : la remise s'applique EXCLUSIVEMENT
+  // sur le reste à charge. Coût pédagogique + prise en charge JAMAIS
+  // impactés. On calcule le reste « avant remise » à la volée pour
+  // l'afficher explicitement à côté du reste final.
+  const totalCost = pricing.totalEstimatedCost;
+  const funding = pricing.estimatedFundingTotal;
+  const restBeforeDiscount =
+    totalCost !== null && funding !== null
+      ? Math.max(totalCost - funding, 0)
+      : totalCost !== null
+      ? totalCost
+      : null;
+  const restFinal = pricing.estimatedRemainingCost;
+  const coverageKind = describeCoverageState(pricing);
 
   return (
     <div className="space-y-6">
@@ -471,47 +482,78 @@ export function ProposalEditor({
         <h3 className="mb-3 font-heading text-sm font-semibold text-[#00527a]">
           Tarification
         </h3>
+        {/* Règle métier (revue #49) : 4 montants explicites — le
+            dirigeant DOIT voir que la remise ne touche ni le coût
+            pédagogique ni les droits, uniquement le reste à charge. */}
         <dl className="mb-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Coût / participant
-            </dt>
-            <dd className="mt-0.5 font-medium">
-              {pricing.costPerParticipant !== null
-                ? formatPriceEuros(pricing.costPerParticipant)
-                : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Participants
-            </dt>
-            <dd className="mt-0.5 font-medium">
-              {pricing.participantCount ?? "—"}
-            </dd>
-          </div>
           <div>
             <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
               Coût pédagogique
             </dt>
-            <dd className="mt-0.5 font-medium">
-              {pricing.totalEstimatedCost !== null
-                ? formatPriceEuros(pricing.totalEstimatedCost)
+            <dd
+              data-testid="editor-cost-total"
+              className="mt-0.5 font-medium"
+            >
+              {totalCost !== null ? formatPriceEuros(totalCost) : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Prise en charge estimée
+            </dt>
+            <dd
+              data-testid="editor-funding"
+              className="mt-0.5 font-medium"
+            >
+              {funding !== null ? formatPriceEuros(funding) : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Reste à charge (avant remise)
+            </dt>
+            <dd
+              data-testid="editor-rest-before-discount"
+              className="mt-0.5 font-medium"
+            >
+              {restBeforeDiscount !== null
+                ? formatPriceEuros(restBeforeDiscount)
                 : "—"}
             </dd>
           </div>
           <div>
             <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Montant final
+              Reste à charge final
             </dt>
             <dd
-              data-testid="editor-final-cost"
+              data-testid="editor-rest-final"
               className="mt-0.5 font-semibold text-[#00527a]"
             >
-              {effectiveCost !== null ? formatPriceEuros(effectiveCost) : "—"}
+              {restFinal !== null ? formatPriceEuros(restFinal) : "—"}
             </dd>
           </div>
         </dl>
+
+        {/* Libellé couverture — distingue « pris en charge »
+            (funding couvre tout) de « offert » (remise ramène le reste
+            à 0 sans que les droits couvrent). Règle produit critique. */}
+        {coverageKind === "fully_covered_by_funding" && (
+          <p
+            data-testid="editor-coverage-label"
+            className="mb-3 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900"
+          >
+            Formation intégralement prise en charge par le financement.
+          </p>
+        )}
+        {coverageKind === "offered_via_discount" && (
+          <p
+            data-testid="editor-coverage-label"
+            className="mb-3 rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs text-sky-900"
+          >
+            Reste à charge offert par un geste commercial (le
+            financement AGEFICE/OPCO reste inchangé).
+          </p>
+        )}
 
         {/* Remise commerciale */}
         <div className="rounded-md border border-border/60 bg-muted/20 p-3">

@@ -73,6 +73,9 @@ export async function saveProposal(
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        // Pas de cache sur les mutations — cohérent avec la route
+        // `dynamic = 'force-dynamic'` et le GET `cache: 'no-store'`.
+        cache: "no-store",
       }
     );
   } catch (err) {

@@ -282,6 +282,12 @@ export async function getProposalByDiagnosticId(
     response = await fetch(`/api/diagnostics/${diagnosticId}/proposal`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
+      // `no-store` NON-NÉGOCIABLE : même classe de bug que le
+      // `dynamic = 'force-dynamic'` côté route. Sans ce flag, la
+      // réponse GET peut être resservie depuis le HTTP cache browser
+      // après un PUT, et l'utilisateur voit son édition « disparaître »
+      // alors qu'elle est bien persistée.
+      cache: "no-store",
     });
   } catch (err) {
     return {
